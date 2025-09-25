@@ -20,9 +20,9 @@
 
 /**
  * Team roles allow you to provide permission levels to users
- * when they're acting on an account.  By default, we provide
+ * when they're acting on a team.  By default, we provide
  * "owner" and "member".  The only distinction is that owners can
- * also manage billing and invite/remove account members.
+ * also manage billing and invite/remove team members.
  */
 DO
 $$
@@ -46,8 +46,8 @@ $$;
 CREATE TABLE IF NOT EXISTS basejump.teams
 (
     id                    uuid unique                NOT NULL DEFAULT extensions.uuid_generate_v4(),
-    -- defaults to the user who creates the account
-    -- this user cannot be removed from an account without changing
+    -- defaults to the user who creates the team
+    -- this user cannot be removed from a team without changing
     -- the primary owner first
     primary_owner_user_id uuid references auth.users not null default auth.uid(),
     -- Team name
@@ -63,8 +63,8 @@ CREATE TABLE IF NOT EXISTS basejump.teams
     PRIMARY KEY (id)
 );
 
--- constraint that conditionally allows nulls on the slug ONLY if personal_account is true
--- remove this if you want to ignore accounts slugs entirely
+-- constraint that conditionally allows nulls on the slug ONLY if personal_team is true
+-- remove this if you want to ignore teams slugs entirely
 ALTER TABLE basejump.teams
     ADD CONSTRAINT basejump_teams_slug_null_if_personal_team_true CHECK (
             (personal_team = true AND slug is null)
@@ -76,7 +76,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE basejump.teams TO authenticated, s
 
 /**
  * We want to protect some fields on teams from being updated
- * Specifically the primary owner user id and account id.
+ * Specifically the primary owner user id and team id.
  * primary_owner_user_id should be updated using the dedicated function
  */
 CREATE OR REPLACE FUNCTION basejump.protect_team_fields()
@@ -144,18 +144,18 @@ CREATE TRIGGER basejump_set_teams_user_tracking
 EXECUTE PROCEDURE basejump.trigger_set_user_tracking();
 
 /**
-  * Account users are the users that are associated with an account.
-  * They can be invited to join the account, and can have different roles.
+  * Team users are the users that are associated with a team.
+  * They can be invited to join the team, and can have different roles.
   * The system does not enforce any permissions for roles, other than restricting
-  * billing and account membership to only owners
+  * billing and team membership to only owners
  */
 create table if not exists basejump.team_user
 (
-    -- id of the user in the account
+    -- id of the user in the team
     user_id      uuid references auth.users on delete cascade        not null,
-    -- id of the account the user is in
+    -- id of the team the user is in
     team_id      uuid references basejump.teams on delete cascade not null,
-    -- role of the user in the account
+    -- role of the user in the team
     team_role    basejump.team_role                                  not null,
     constraint team_user_pkey primary key (user_id, team_id)
 );
@@ -163,12 +163,12 @@ create table if not exists basejump.team_user
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE basejump.team_user TO authenticated, service_role;
 
 
--- enable RLS for account_user
+-- enable RLS for team_user
 alter table basejump.team_user
     enable row level security;
 
 /**
-  * When an account gets created, we want to insert the current user as the first
+  * When a team gets created, we want to insert the current user as the first
   * owner
  */
 create or replace function basejump.add_current_user_to_new_team()
@@ -187,7 +187,7 @@ begin
 end;
 $$;
 
--- trigger the function whenever a new account is created
+-- trigger the function whenever a new team is created
 CREATE TRIGGER basejump_add_current_user_to_new_team
     AFTER INSERT
     ON basejump.teams
@@ -195,8 +195,8 @@ CREATE TRIGGER basejump_add_current_user_to_new_team
 EXECUTE FUNCTION basejump.add_current_user_to_new_team();
 
 /**
-  * When a user signs up, we need to create a personal account for them
-  * and add them to the account_user table so they can act on it
+  * When a user signs up, we need to create a personal team for them
+  * and add them to the team_user table so they can act on it
  */
 create or replace function basejump.run_new_user_setup()
     returns trigger
@@ -519,7 +519,7 @@ BEGIN
                            'slug', a.slug,
                            'personal_team', a.personal_team,
                            'billing_enabled', case
-                                                  when a.personal_account = true then
+                                                 when a.personal_team = true then
                                                       config.enable_personal_account_billing
                                                   else
                                                       config.enable_team_account_billing
@@ -555,7 +555,7 @@ DECLARE
     internal_team_id uuid;
 BEGIN
     select a.id
-    into internal_account_id
+    into internal_team_id
     from basejump.teams a
     where a.slug IS NOT NULL
       and a.slug = get_team_by_slug.slug;
