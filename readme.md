@@ -1,6 +1,6 @@
 # Start
 
-Run `supabase start` to start containers.
+Run `supabase start` to start containers:
 
 ```bash
 supabase start
