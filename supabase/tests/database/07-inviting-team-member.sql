@@ -14,12 +14,12 @@ select tests.create_supabase_user('invited');
 --- start acting as an authenticated user
 select tests.authenticate_as('test1');
 
-insert into basejump.accounts (id, name, slug, personal_account)
+insert into basejump.teams (id, name, slug, personal_team)
 values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'test', 'test', false);
 
 -- create invitation
 SELECT row_eq(
-               $$ insert into basejump.invitations (account_id, account_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_member_single_use_token', 'one_time') returning 1 $$,
+               $$ insert into basejump.invitations (team_id, team_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_member_single_use_token', 'one_time') returning 1 $$,
                ROW (1),
                'Owners should be able to add invitations for new members'
            );
@@ -69,27 +69,27 @@ SELECT lives_ok(
 -- should be able to get the team from get_accounts_with_role
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' IN
-                       (select basejump.get_accounts_with_role())),
+                       (select basejump.get_teams_with_role())),
                'Should now be a part of the team'
            );
 
 -- should have the correct role on the team
 SELECT row_eq(
-               $$ select account_role from basejump.account_user where account_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f'::uuid and user_id = tests.get_supabase_uid('invited') $$,
-               ROW ('member'::basejump.account_role),
-               'Should have the correct account role after accepting an invitation'
+               $$ select team_role from basejump.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f'::uuid and user_id = tests.get_supabase_uid('invited') $$,
+               ROW ('member'::basejump.team_role),
+               'Should have the correct team role after accepting an invitation'
            );
 
 SELECT throws_ok(
-               $$ select get_account_members('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')$$,
-               'Only account owners can access this function'
+               $$ select get_team_members('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')$$,
+               'Only team owners can access this function'
            );
 
 select tests.authenticate_as('test1');
 SELECT row_eq(
-               $$ select json_array_length(get_account_members('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
+               $$ select json_array_length(get_team_members('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
                ROW (2),
-               'Should be able to get account members as owner'
+               'Should be able to get team members as owner'
            );
 
 SELECT *

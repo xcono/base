@@ -184,3 +184,5 @@ select regexp_replace(replace(
 $$ LANGUAGE sql;
 
 grant execute on function basejump.generate_token(int) to authenticated;
+
+

@@ -15,68 +15,68 @@ select tests.create_supabase_user('testing_member');
 
 --- Setup the tests
 select tests.authenticate_as('primary_owner');
-select create_account('test', 'Test Account');
+select create_team('test', 'Test Team');
 
 set role postgres;
 
-insert into basejump.account_user (account_id, account_role, user_id)
-values (get_account_id('test'), 'member', tests.get_supabase_uid('member'));
-insert into basejump.account_user (account_id, account_role, user_id)
-values (get_account_id('test'), 'owner', tests.get_supabase_uid('invited_owner'));
-insert into basejump.account_user (account_id, account_role, user_id)
-values (get_account_id('test'), 'member', tests.get_supabase_uid('testing_member'));
+insert into basejump.team_user (team_id, team_role, user_id)
+values (get_team_id('test'), 'member', tests.get_supabase_uid('member'));
+insert into basejump.team_user (team_id, team_role, user_id)
+values (get_team_id('test'), 'owner', tests.get_supabase_uid('invited_owner'));
+insert into basejump.team_user (team_id, team_role, user_id)
+values (get_team_id('test'), 'member', tests.get_supabase_uid('testing_member'));
 
 ---  can NOT remove a member unless your an owner
 select tests.authenticate_as('member');
 
 SELECT throws_ok(
-               $$ select remove_account_member(get_account_id('test'), tests.get_supabase_uid('testing_member')) $$,
-               'Only account owners can access this function'
+               $$ select remove_team_member(get_team_id('test'), tests.get_supabase_uid('testing_member')) $$,
+               'Only team owners can access this function'
            );
 
 --- CAN remove a member if you're an owner
 select tests.authenticate_as('invited_owner');
 
 select lives_ok(
-               $$select remove_account_member(get_account_id('test'), tests.get_supabase_uid('testing_member'))$$,
+               $$select remove_team_member(get_team_id('test'), tests.get_supabase_uid('testing_member'))$$,
                'Owners should be able to remove members'
            );
 
 select tests.authenticate_as('testing_member');
 
 SELECT is(
-               (select basejump.has_role_on_account(get_account_id('test'))),
+               (select basejump.has_role_on_team(get_team_id('test'))),
                false,
-               'Should no longer have access to the account'
+               'Should no longer have access to the team'
            );
 
 --- can NOT remove the primary owner
 select tests.authenticate_as('invited_owner');
 
 --- attempt to delete primary owner
-select remove_account_member(get_account_id('test'), tests.get_supabase_uid('primary_owner'));
+select remove_team_member(get_team_id('test'), tests.get_supabase_uid('primary_owner'));
 
 --- CAN remove ANOTHER owner as an owner as long as that owner is NOT the primary owner
 
 select tests.authenticate_as('primary_owner');
 
 SELECT is(
-               (select basejump.has_role_on_account(get_account_id('test'), 'owner')),
+               (select basejump.has_role_on_team(get_team_id('test'), 'owner')),
                true,
                'Primary owner should still be on the account'
            );
 
 select lives_ok(
-               $$select remove_account_member(get_account_id('test'), tests.get_supabase_uid('invited_owner'))$$,
+               $$select remove_team_member(get_team_id('test'), tests.get_supabase_uid('invited_owner'))$$,
                'Owners should be able to remove owners that arent the primary'
            );
 
 select tests.authenticate_as('invited_owner');
 
 SELECT is(
-               (select basejump.has_role_on_account(get_account_id('test'))),
+               (select basejump.has_role_on_team(get_team_id('test'))),
                false,
-               'Should no longer have access to the account'
+               'Should no longer have access to the team'
            );
 
 SELECT *

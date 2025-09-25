@@ -20,33 +20,33 @@ select tests.create_supabase_user('expired');
 --- start acting as an authenticated user
 select tests.authenticate_as('owner');
 
--- create the taem account
-insert into basejump.accounts (id, name, slug, personal_account)
+-- create the team
+insert into basejump.teams (id, name, slug, personal_team)
 values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'test', 'test', false);
 
 -- insert some invitations
 SELECT row_eq(
-               $$ insert into basejump.invitations (account_id, account_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'owner', 'test_member_single_use_token', 'one_time') returning 1 $$,
+               $$ insert into basejump.invitations (team_id, team_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'owner', 'test_member_single_use_token', 'one_time') returning 1 $$,
                ROW (1),
                'Owners should be able to add one_time invitations for new members'
            );
 
 SELECT row_eq(
-               $$ insert into basejump.invitations (account_id, account_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_member_24_hour_token', '24_hour') returning 1 $$,
+               $$ insert into basejump.invitations (team_id, team_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_member_24_hour_token', '24_hour') returning 1 $$,
                ROW (1),
                'Owners should be able to add 24_hour invitations for new members'
            );
 
 -- Creating an invitation with the create_invitation function should also work
 SELECT row_eq(
-               $$ select json_object_keys(create_invitation('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f'::uuid, 'member'::basejump.account_role, '24_hour'::basejump.invitation_type))$$,
+               $$ select json_object_keys(create_invitation('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f'::uuid, 'member'::basejump.team_role, '24_hour'::basejump.invitation_type))$$,
                ROW ('token'::text),
                'Owners should be able to add 24_hour invitations for new members with create_invitation'
            );
 
 -- listing invitations should work
 SELECT row_eq(
-               $$ select json_array_length(get_account_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
+               $$ select json_array_length(get_team_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
                ROW (3),
                'Should be able to list invitations for an account as an owner'
            );
@@ -55,26 +55,26 @@ SELECT row_eq(
 -- Deleting invitations
 -------
 
-insert into basejump.invitations (account_id, account_role, token, invitation_type, id)
+insert into basejump.invitations (team_id, team_role, token, invitation_type, id)
 values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_member_multiple_use_token', 'one_time',
         '5c795311-62cc-4e44-b056-8d2ac632d0bf');
 
 select tests.authenticate_as('invited_member1');
 select throws_ok(
                $$ select delete_invitation('5c795311-62cc-4e44-b056-8d2ac632d0bf') $$,
-               'Only account owners can delete invitations'
+               'Only team owners can delete invitations'
            );
 
 --- owner can delete invitations
 select tests.authenticate_as('owner');
 SELECT row_eq(
-               $$ select json_array_length(get_account_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
+               $$ select json_array_length(get_team_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
                ROW (4),
                'Should be able to list invitations for an account as an owner'
            );
 select delete_invitation('5c795311-62cc-4e44-b056-8d2ac632d0bf');
 SELECT row_eq(
-               $$ select json_array_length(get_account_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
+               $$ select json_array_length(get_team_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
                ROW (3),
                'Should be able to list invitations for an account as an owner'
            );
@@ -109,27 +109,27 @@ SELECT lives_ok(
                'Should be able to accept an invitation'
            );
 
--- should be able to get the team from get_accounts_with_role
+-- should be able to get the team from get_teams_with_role
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' IN
-                       (select basejump.get_accounts_with_role('owner'))),
+                       (select basejump.get_teams_with_role('owner'))),
                'Should now be a part of the team as owner'
            );
 
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' NOT IN
-                       (select basejump.get_accounts_with_role('member'))),
+                       (select basejump.get_teams_with_role('member'))),
                'Should not be part of the team as member role'
            );
 
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' IN
-                       (select basejump.get_accounts_with_role())),
+                       (select basejump.get_teams_with_role())),
                'Should now be a part of the team as lookup all'
            );
 
 SELECT row_eq(
-               $$ select json_array_length(get_account_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
+               $$ select json_array_length(get_team_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
                ROW (2),
                'Should be able to list invitations for an account as an owner'
            );
@@ -165,34 +165,34 @@ SELECT lives_ok(
                'Should be able to accept a 24_hour invitation'
            );
 
--- should be able to get the team from get_accounts_with_role
+-- should be able to get the team from get_teams_with_role
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' NOT IN
-                       (select basejump.get_accounts_with_role('owner'))),
+                       (select basejump.get_teams_with_role('owner'))),
                'Should not be a part of the team as owner'
            );
 
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' IN
-                       (select basejump.get_accounts_with_role('member'))),
+                       (select basejump.get_teams_with_role('member'))),
                'Should be part of the team as member role'
            );
 
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' IN
-                       (select basejump.get_accounts_with_role())),
+                       (select basejump.get_teams_with_role())),
                'Should now be a part of the team as lookup all'
            );
 
 -- members should NOT be able to create new invitations
 SELECT throws_ok(
-               $$ insert into basejump.invitations (account_id, account_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_permissions_token', 'one_time') returning 1 $$,
+               $$ insert into basejump.invitations (team_id, team_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_permissions_token', 'one_time') returning 1 $$,
                'new row violates row-level security policy for table "invitations"'
            );
 
 SELECT throws_ok(
-               $$ select json_array_length(get_account_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
-               'Only account owners can access this function'
+               $$ select json_array_length(get_team_invitations('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')) $$,
+               'Only team owners can access this function'
            );
 ------------
 -- Third member joining with 24_hour token
@@ -212,22 +212,22 @@ SELECT lives_ok(
                'Should be able to accept a 24_hour invitation'
            );
 
--- should be able to get the team from get_accounts_with_role
+-- should be able to get the team from get_teams_with_role
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' NOT IN
-                       (select basejump.get_accounts_with_role('owner'))),
+                       (select basejump.get_teams_with_role('owner'))),
                'Should not be a part of the team as owner'
            );
 
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' IN
-                       (select basejump.get_accounts_with_role('member'))),
+                       (select basejump.get_teams_with_role('member'))),
                'Should be part of the team as member role'
            );
 
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' IN
-                       (select basejump.get_accounts_with_role())),
+                       (select basejump.get_teams_with_role())),
                'Should now be a part of the team as lookup all'
            );
 
@@ -244,7 +244,7 @@ SELECT is_empty(
 
 -- inserting an invitation for an account ID you know but aren't an owner of should NOT work
 SELECT throws_ok(
-               $$ insert into basejump.invitations (account_id, account_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'owner', 'test', 'one_time') returning 1 $$,
+               $$ insert into basejump.invitations (team_id, team_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'owner', 'test', 'one_time') returning 1 $$,
                'new row violates row-level security policy for table "invitations"'
            );
 
@@ -262,7 +262,7 @@ SELECT throws_ok(
 
 -- cannot create an invitation as an anonymous user for a known account ID
 SELECT throws_ok(
-               $$ insert into basejump.invitations (account_id, account_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'owner', 'test', 'one_time') returning 1 $$,
+               $$ insert into basejump.invitations (team_id, team_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'owner', 'test', 'one_time') returning 1 $$,
                'permission denied for schema basejump'
            );
 
@@ -275,7 +275,7 @@ select tests.authenticate_as('owner');
 
 select tests.freeze_time(CURRENT_TIMESTAMP - interval '25 hours');
 
-insert into basejump.invitations (account_id, account_role, token, invitation_type)
+insert into basejump.invitations (team_id, team_role, token, invitation_type)
 values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f',
         'owner',
         'expired_token',

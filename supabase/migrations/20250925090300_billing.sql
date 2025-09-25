@@ -32,12 +32,12 @@ $$;
 
 /**
  * Billing customer
- * This is a private table that contains a mapping of user IDs to your billing providers IDs
+ * This is a private table that contains a mapping of team IDs to your billing providers IDs
  */
 create table if not exists basejump.billing_customers
 (
-    -- UUID from auth.users
-    account_id uuid references basejump.accounts (id) on delete cascade not null,
+    -- Team ID
+    team_id uuid references basejump.teams (id) on delete cascade not null,
     -- The user's customer ID in Stripe. User must not be able to update this.
     id         text primary key,
     -- The email address the customer wants to use for invoicing
@@ -60,13 +60,13 @@ alter table
 
 /**
   * Billing subscriptions
-  * This is a private table that contains a mapping of account IDs to your billing providers subscription IDs
+ * This is a private table that contains a mapping of team IDs to your billing providers subscription IDs
  */
 create table if not exists basejump.billing_subscriptions
 (
     -- Subscription ID from Stripe, e.g. sub_1234.
     id                   text primary key,
-    account_id           uuid references basejump.accounts (id) on delete cascade          not null,
+    team_id              uuid references basejump.teams (id) on delete cascade          not null,
     billing_customer_id  text references basejump.billing_customers (id) on delete cascade not null,
     -- The status of the subscription object, one of subscription_status type above.
     status               basejump.subscription_status,
@@ -117,14 +117,14 @@ alter table
 create policy "Can only view own billing customer data." on basejump.billing_customers for
     select
     using (
-    basejump.has_role_on_account(account_id) = true
+    basejump.has_role_on_team(team_id) = true
     );
 
 
 create policy "Can only view own billing subscription data." on basejump.billing_subscriptions for
     select
     using (
-    basejump.has_role_on_account(account_id) = true
+    basejump.has_role_on_team(team_id) = true
     );
 
 /**
@@ -137,9 +137,9 @@ create policy "Can only view own billing subscription data." on basejump.billing
 
 
 /**
-  * Returns the current billing status for an account
+  * Returns the current billing status for a team
  */
-CREATE OR REPLACE FUNCTION public.get_account_billing_status(account_id uuid)
+CREATE OR REPLACE FUNCTION public.get_team_billing_status(team_id uuid)
     RETURNS jsonb
     security definer
     set search_path = public, basejump
@@ -149,13 +149,13 @@ DECLARE
     result      jsonb;
     role_result jsonb;
 BEGIN
-    select public.current_user_account_role(get_account_billing_status.account_id) into role_result;
+    select public.current_user_team_role(get_team_billing_status.team_id) into role_result;
 
     select jsonb_build_object(
-                   'account_id', get_account_billing_status.account_id,
+                   'team_id', get_team_billing_status.team_id,
                    'billing_subscription_id', s.id,
                    'billing_enabled', case
-                                          when a.personal_account = true then config.enable_personal_account_billing
+                                          when a.personal_team = true then config.enable_personal_account_billing
                                           else config.enable_team_account_billing end,
                    'billing_status', s.status,
                    'billing_customer_id', c.id,
@@ -164,12 +164,12 @@ BEGIN
                    coalesce(c.email, u.email) -- if we don't have a customer email, use the user's email as a fallback
                )
     into result
-    from basejump.accounts a
+    from basejump.teams a
              join auth.users u on u.id = a.primary_owner_user_id
-             left join basejump.billing_subscriptions s on s.account_id = a.id
-             left join basejump.billing_customers c on c.account_id = coalesce(s.account_id, a.id)
+             left join basejump.billing_subscriptions s on s.team_id = a.id
+             left join basejump.billing_customers c on c.team_id = coalesce(s.team_id, a.id)
              join basejump.config config on true
-    where a.id = get_account_billing_status.account_id
+    where a.id = get_team_billing_status.team_id
     order by s.created desc
     limit 1;
 
@@ -177,12 +177,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-grant execute on function public.get_account_billing_status(uuid) to authenticated;
+grant execute on function public.get_team_billing_status(uuid) to authenticated;
 
 /**
-  * Allow service accounts to upsert the billing data for an account
+  * Allow service accounts to upsert the billing data for a team
  */
-CREATE OR REPLACE FUNCTION public.service_role_upsert_customer_subscription(account_id uuid,
+CREATE OR REPLACE FUNCTION public.service_role_upsert_customer_subscription(team_id uuid,
                                                                             customer jsonb default null,
                                                                             subscription jsonb default null)
     RETURNS void AS
@@ -190,8 +190,8 @@ $$
 BEGIN
     -- if the customer is not null, upsert the data into billing_customers, only upsert fields that are present in the jsonb object
     if customer is not null then
-        insert into basejump.billing_customers (id, account_id, email, provider)
-        values (customer ->> 'id', service_role_upsert_customer_subscription.account_id, customer ->> 'billing_email',
+        insert into basejump.billing_customers (id, team_id, email, provider)
+        values (customer ->> 'id', service_role_upsert_customer_subscription.team_id, customer ->> 'billing_email',
                 (customer ->> 'provider'))
         on conflict (id) do update
             set email = customer ->> 'billing_email';
@@ -199,11 +199,11 @@ BEGIN
 
     -- if the subscription is not null, upsert the data into billing_subscriptions, only upsert fields that are present in the jsonb object
     if subscription is not null then
-        insert into basejump.billing_subscriptions (id, account_id, billing_customer_id, status, metadata, price_id,
+        insert into basejump.billing_subscriptions (id, team_id, billing_customer_id, status, metadata, price_id,
                                                     quantity, cancel_at_period_end, created, current_period_start,
                                                     current_period_end, ended_at, cancel_at, canceled_at, trial_start,
                                                     trial_end, plan_name, provider)
-        values (subscription ->> 'id', service_role_upsert_customer_subscription.account_id,
+        values (subscription ->> 'id', service_role_upsert_customer_subscription.team_id,
                 subscription ->> 'billing_customer_id', (subscription ->> 'status')::basejump.subscription_status,
                 subscription -> 'metadata',
                 subscription ->> 'price_id', (subscription ->> 'quantity')::int,

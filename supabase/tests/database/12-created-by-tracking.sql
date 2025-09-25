@@ -16,19 +16,19 @@ select tests.create_supabase_user('test_member');
 ------------
 select tests.authenticate_as('test1');
 
-insert into basejump.accounts (id, name, slug)
+insert into basejump.teams (id, name, slug)
 values ('00000000-0000-0000-0000-000000000000', 'test', 'test');
 
-insert into basejump.accounts (id, name, slug)
+insert into basejump.teams (id, name, slug)
 values ('00000000-0000-0000-0000-000000000001', 'test', 'test2');
 
 select is(
-               (select created_by from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select created_by from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                tests.get_supabase_uid('test1'),
                'created_by is set to the user that created the account'
            );
 select is(
-               (select updated_by from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select updated_by from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                tests.get_supabase_uid('test1'),
                'created_by is set to the user that created the account'
            );
@@ -37,31 +37,31 @@ select is(
 select tests.clear_authentication();
 set role postgres;
 
-insert into basejump.account_user (account_id, account_role, user_id)
+insert into basejump.team_user (team_id, team_role, user_id)
 values ('00000000-0000-0000-0000-000000000000', 'owner', tests.get_supabase_uid('test_member'));
 
-update basejump.accounts
+update basejump.teams
 set name = 'test update'
 where id = '00000000-0000-0000-0000-000000000001';
 
 select is(
-               (select updated_by from basejump.accounts where id = '00000000-0000-0000-0000-000000000001'),
+               (select updated_by from basejump.teams where id = '00000000-0000-0000-0000-000000000001'),
                NULL,
                'Updtaes from postgres / service_role users set updated_by field to null'
            );
 
 select tests.authenticate_as('test_member');
 
-select update_account('00000000-0000-0000-0000-000000000000', slug => 'updated-slug');
+select update_team('00000000-0000-0000-0000-000000000000', slug => 'updated-slug');
 
 select is(
-               (select updated_by from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select updated_by from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                tests.get_supabase_uid('test_member'),
                'updated_by is set to the user that updated the account'
            );
 
 select is(
-               (select created_by from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select created_by from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                tests.get_supabase_uid('test1'),
                'created_by is set to the user that created the account'
            );
