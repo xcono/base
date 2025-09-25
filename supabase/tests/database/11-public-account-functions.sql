@@ -3,10 +3,6 @@ create extension "basejump-supabase_test_helpers" version '0.0.6';
 
 select plan(29);
 
--- make sure we're setup for the test correctly
-update basejump.config
-set enable_team_accounts = true;
-
 --- we insert a user into auth.users and return the id into user_id to use
 select tests.create_supabase_user('test1');
 select tests.create_supabase_user('test2');
@@ -18,7 +14,7 @@ select create_team(name => 'My Account 2', slug => 'my-account-2');
 
 select is(
                (select (get_team_by_slug('my-account') ->> 'team_id')::uuid),
-               (select id from basejump.teams where slug = 'my-account'),
+               (select id from tenancy.teams where slug = 'my-account'),
                'get_team_by_slug returns the correct team_id'
            );
 
@@ -30,7 +26,7 @@ select is(
 
 
 -- insert known account id into accounts table for testing later
-insert into basejump.teams (id, slug, name)
+insert into tenancy.teams (id, slug, name)
 values ('00000000-0000-0000-0000-000000000000', 'my-known-account', 'My Known Account');
 
 -- get_account_id should return the correct account id
@@ -50,7 +46,7 @@ select is(
 select update_team('00000000-0000-0000-0000-000000000000', slug => 'my-updated-slug');
 
 select is(
-               (select slug from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
+               (select slug from tenancy.teams where id = '00000000-0000-0000-0000-000000000000'),
                'my-updated-slug',
                'Updating slug should have been successful for the owner'
            );
@@ -58,7 +54,7 @@ select is(
 select update_team('00000000-0000-0000-0000-000000000000', name => 'My Updated Account Name');
 
 select is(
-               (select name from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
+               (select name from tenancy.teams where id = '00000000-0000-0000-0000-000000000000'),
                'My Updated Account Name',
                'Updating team name should have been successful for the owner'
            );
@@ -66,7 +62,7 @@ select is(
 select update_team('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo', 'bar'));
 
 select is(
-               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from tenancy.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo": "bar"
                }'::jsonb,
@@ -76,7 +72,7 @@ select is(
 select update_team('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo', 'bar2'));
 
 select is(
-               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from tenancy.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo": "bar2"
                }'::jsonb,
@@ -86,7 +82,7 @@ select is(
 select update_team('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo2', 'bar'));
 
 select is(
-               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from tenancy.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo": "bar2",
                  "foo2": "bar"
@@ -98,7 +94,7 @@ select update_team('00000000-0000-0000-0000-000000000000', public_metadata => js
                       replace_metadata => true);
 
 select is(
-               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from tenancy.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo3": "bar"
                }'::jsonb,
@@ -117,7 +113,7 @@ select is(
 select update_team('00000000-0000-0000-0000-000000000000', name => 'My Updated Account Name 2');
 
 select is(
-               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from tenancy.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo3": "bar"
                }'::jsonb,
@@ -129,7 +125,7 @@ select is(
 select tests.clear_authentication();
 set role postgres;
 
-insert into basejump.team_user (team_id, team_role, user_id)
+insert into tenancy.team_user (team_id, team_role, user_id)
 values ('00000000-0000-0000-0000-000000000000', 'member', tests.get_supabase_uid('test_member'));
 
 select tests.authenticate_as('test_member');
@@ -179,7 +175,7 @@ select create_team('My AccOunt & 3');
 
 select is(
                (select (get_team_by_slug('my-account-3') ->> 'team_id')::uuid),
-               (select id from basejump.teams where slug = 'my-account-3'),
+               (select id from tenancy.teams where slug = 'my-account-3'),
                'get_team_by_slug returns the correct team_id'
            );
 
@@ -233,7 +229,7 @@ select is(
 
 select is(
                (select (get_team_by_slug('my-updated-slug') ->> 'team_id')::uuid),
-               (select id from basejump.teams where slug = 'my-updated-slug'),
+               (select id from tenancy.teams where slug = 'my-updated-slug'),
                'get_team_by_slug returns the correct team_id'
            );
 
