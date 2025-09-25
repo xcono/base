@@ -162,13 +162,13 @@ select throws_ok(
 select is(
                (select json_array_length(get_teams())),
                1,
-               'get_teams returns 1 teams (personal)'
+               'get_teams returns 1 teams (default)'
            );
 
 select is(
-               (select get_personal_team() ->> 'team_id'),
+               (select get_team(auth.uid()) ->> 'team_id'),
                auth.uid()::text,
-               'get_personal_team should return the correct team_id'
+               'get_team should return the correct team_id for user default team'
            );
 
 
@@ -186,7 +186,7 @@ select is(
 select is(
                (select json_array_length(get_teams())),
                2,
-               'get_teams returns 2 teams (personal and team)'
+               'get_teams returns 2 teams (default and team)'
            );
 
 

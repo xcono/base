@@ -154,9 +154,7 @@ BEGIN
     select jsonb_build_object(
                    'team_id', get_team_billing_status.team_id,
                    'billing_subscription_id', s.id,
-                   'billing_enabled', case
-                                          when a.personal_team = true then config.enable_personal_account_billing
-                                          else config.enable_team_account_billing end,
+                   'billing_enabled', config.enable_team_account_billing,
                    'billing_status', s.status,
                    'billing_customer_id', c.id,
                    'billing_provider', config.billing_provider,

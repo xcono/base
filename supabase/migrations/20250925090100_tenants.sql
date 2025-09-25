@@ -53,7 +53,6 @@ CREATE TABLE IF NOT EXISTS basejump.teams
     -- Team name
     name                  text,
     slug                  text unique,
-    personal_team         boolean                             default false not null,
     updated_at            timestamp with time zone,
     created_at            timestamp with time zone,
     created_by            uuid references auth.users,
@@ -63,13 +62,6 @@ CREATE TABLE IF NOT EXISTS basejump.teams
     PRIMARY KEY (id)
 );
 
--- constraint that conditionally allows nulls on the slug ONLY if personal_team is true
--- remove this if you want to ignore teams slugs entirely
-ALTER TABLE basejump.teams
-    ADD CONSTRAINT basejump_teams_slug_null_if_personal_team_true CHECK (
-            (personal_team = true AND slug is null)
-            OR (personal_team = false AND slug is not null)
-        );
 
 -- Open up access to teams
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE basejump.teams TO authenticated, service_role;
@@ -87,7 +79,6 @@ BEGIN
         -- these are protected fields that users are not allowed to update themselves
         -- platform admins should be VERY careful about updating them as well.
         if NEW.id <> OLD.id
-            OR NEW.personal_team <> OLD.personal_team
             OR NEW.primary_owner_user_id <> OLD.primary_owner_user_id
         THEN
             RAISE EXCEPTION 'You do not have permission to update this field';
@@ -215,9 +206,9 @@ begin
     if new.email IS NOT NULL then
         generated_user_name := split_part(new.email, '@', 1);
     end if;
-    -- create the new users's personal team
-    insert into basejump.teams (name, primary_owner_user_id, personal_team, id)
-    values (generated_user_name, NEW.id, true, NEW.id)
+    -- create the new user's default team
+    insert into basejump.teams (name, primary_owner_user_id, id)
+    values (generated_user_name, NEW.id, NEW.id)
     returning id into first_account_id;
 
     -- add them to the team_user table so they can act on it
@@ -345,7 +336,6 @@ create policy "Teams can be created by any user" on basejump.teams
     to authenticated
     with check (
             basejump.is_set('enable_team_accounts') = true
-        and personal_team = false
     );
 
 
@@ -394,8 +384,7 @@ BEGIN
 
     select jsonb_build_object(
                    'team_role', wu.team_role,
-                   'is_primary_owner', a.primary_owner_user_id = auth.uid(),
-                   'is_personal_team', a.personal_team
+                   'is_primary_owner', a.primary_owner_user_id = auth.uid()
                )
     into response
     from basejump.team_user wu
@@ -483,7 +472,6 @@ select coalesce(json_agg(
                                 'is_primary_owner', a.primary_owner_user_id = auth.uid(),
                                 'name', a.name,
                                 'slug', a.slug,
-                                'personal_team', a.personal_team,
                                 'created_at', a.created_at,
                                 'updated_at', a.updated_at
                             )
@@ -517,13 +505,7 @@ BEGIN
                            'is_primary_owner', a.primary_owner_user_id = auth.uid(),
                            'name', a.name,
                            'slug', a.slug,
-                           'personal_team', a.personal_team,
-                           'billing_enabled', case
-                                                 when a.personal_team = true then
-                                                      config.enable_personal_account_billing
-                                                  else
-                                                      config.enable_team_account_billing
-                               end,
+                           'billing_enabled', config.enable_team_account_billing,
                            'billing_status', bs.status,
                            'created_at', a.created_at,
                            'updated_at', a.updated_at,
@@ -566,20 +548,6 @@ $$;
 
 grant execute on function public.get_team_by_slug(text) to authenticated;
 
-/**
-  Returns the personal team for the current user
- */
-create or replace function public.get_personal_team()
-    returns json
-    language plpgsql
-as
-$$
-BEGIN
-    return public.get_team(auth.uid());
-END;
-$$;
-
-grant execute on function public.get_personal_team() to authenticated;
 
 /**
   * Create a team
@@ -645,7 +613,7 @@ grant execute on function public.update_team(uuid, text, text, jsonb, boolean) t
 
 /**
   Returns a list of current team members. Only team owners can access this function.
-  It's a security definer because it requries us to lookup personal_teams for existing members so we can
+  It's a security definer because it requires us to lookup user teams for existing members so we can
   get their names.
  */
 create or replace function public.get_team_members(team_id uuid, results_limit integer default 50,
@@ -674,7 +642,7 @@ BEGIN
                        )
             from basejump.team_user wu
                      join basejump.teams a on a.id = wu.team_id
-                     join basejump.teams p on p.primary_owner_user_id = wu.user_id and p.personal_team = true
+                     join basejump.teams p on p.primary_owner_user_id = wu.user_id and p.id = p.primary_owner_user_id
                      join auth.users u on u.id = wu.user_id
             where wu.team_id = get_team_members.team_id
             limit coalesce(get_team_members.results_limit, 50) offset coalesce(get_team_members.results_offset, 0));

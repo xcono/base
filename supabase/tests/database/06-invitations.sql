@@ -21,8 +21,8 @@ select tests.create_supabase_user('expired');
 select tests.authenticate_as('owner');
 
 -- create the team
-insert into basejump.teams (id, name, slug, personal_team)
-values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'test', 'test', false);
+insert into basejump.teams (id, name, slug)
+values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'test', 'test');
 
 -- insert some invitations
 SELECT row_eq(

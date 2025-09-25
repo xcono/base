@@ -1,7 +1,7 @@
 BEGIN;
 create extension "basejump-supabase_test_helpers" version '0.0.6';
 
-select plan(34);
+select plan(33);
 
 -- make sure we're setup for enabling personal accounts
 update basejump.config
@@ -18,8 +18,8 @@ select tests.create_supabase_user('test_random_owner');
 select tests.authenticate_as('test_random_owner');
 
 -- setup inaccessible tests for a known account ID
-insert into basejump.teams (id, name, slug, personal_team)
-values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'nobody in test can access me', 'no-access', false);
+insert into basejump.teams (id, name, slug)
+values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'nobody in test can access me', 'no-access');
 
 ------------
 --- Primary Owner
@@ -28,7 +28,7 @@ select tests.authenticate_as('test1');
 
 -- should be able to create a team account when they're enabled
 SELECT row_eq(
-               $$ insert into basejump.teams (id, name, slug, personal_team) values ('8fcec130-27cd-4374-9e47-3303f9529479', 'test team', 'test-team', false) returning 1$$,
+               $$ insert into basejump.teams (id, name, slug) values ('8fcec130-27cd-4374-9e47-3303f9529479', 'test team', 'test-team') returning 1$$,
                ROW (1),
                'Should be able to create a new team'
            );
@@ -52,15 +52,14 @@ SELECT row_eq(
                $$ select public.current_user_team_role('8fcec130-27cd-4374-9e47-3303f9529479') $$,
                ROW (jsonb_build_object(
                        'team_role', 'owner',
-                       'is_primary_owner', TRUE,
-                       'is_personal_team', FALSE
+                       'is_primary_owner', TRUE
                    )),
                'Primary owner should be able to get their own role'
            );
 
 -- cannot change the accounts.primary_owner_user_id directly
 SELECT throws_ok(
-               $$ update basejump.teams set primary_owner_user_id = tests.get_supabase_uid('test2') where personal_team = false $$,
+               $$ update basejump.teams set primary_owner_user_id = tests.get_supabase_uid('test2') where id = '8fcec130-27cd-4374-9e47-3303f9529479' $$,
                'You do not have permission to update this field'
            );
 
@@ -93,11 +92,6 @@ SELECT throws_ok(
                'new row violates row-level security policy for table "team_user"'
            );
 
--- cannot change personal_account setting no matter who you are
-SELECT throws_ok(
-               $$ update basejump.teams set personal_team = true where id = '8fcec130-27cd-4374-9e47-3303f9529479' $$,
-               'You do not have permission to update this field'
-           );
 
 -- owner can update their team name
 SELECT results_eq(
@@ -181,8 +175,7 @@ SELECT row_eq(
                $$ select public.current_user_team_role('8fcec130-27cd-4374-9e47-3303f9529479') $$,
                ROW (jsonb_build_object(
                        'team_role', 'member',
-                       'is_primary_owner', FALSE,
-                       'is_personal_team', FALSE
+                       'is_primary_owner', FALSE
                    )),
                'Member should be able to get their own role'
            );
@@ -237,8 +230,7 @@ SELECT row_eq(
                $$ select public.current_user_team_role('8fcec130-27cd-4374-9e47-3303f9529479') $$,
                ROW (jsonb_build_object(
                        'team_role', 'owner',
-                       'is_primary_owner', FALSE,
-                       'is_personal_team', FALSE
+                       'is_primary_owner', FALSE
                    )),
                'Owner should be able to get their own role'
            );
@@ -274,11 +266,11 @@ SELECT results_ne(
                $$ update basejump.teams set name = 'test3' where id = '8fcec130-27cd-4374-9e47-3303f9529479' returning 1$$,
                $$ select 1 $$
            );
--- non member / owner should receive no results from accounts
+-- non member / owner should only see their own default team
 SELECT is(
-               (select count(*)::int from basejump.teams where personal_team = false),
-               0,
-               'Non members / owner should receive no results from teams'
+               (select count(*)::int from basejump.teams),
+               1,
+               'Non members / owner should only see their own default team'
            );
 
 --------------

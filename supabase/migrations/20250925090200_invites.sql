@@ -89,10 +89,6 @@ create policy "Invitations can be created by team owners" on basejump.invitation
     with check (
     -- team accounts should be enabled
             basejump.is_set('enable_team_accounts') = true
-        -- this should not be a personal team
-        and (SELECT personal_team
-             FROM basejump.teams
-             WHERE id = team_id) = false
         -- the inserting user should be an owner of the team
         and
             (basejump.has_role_on_team(team_id, 'owner') = true)
