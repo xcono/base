@@ -13,80 +13,80 @@ select tests.create_supabase_user('test2');
 select tests.create_supabase_user('test_member');
 
 select tests.authenticate_as('test1');
-select create_account('my-account', 'My account');
-select create_account(name => 'My Account 2', slug => 'my-account-2');
+select create_team('my-account', 'My account');
+select create_team(name => 'My Account 2', slug => 'my-account-2');
 
 select is(
-               (select (get_account_by_slug('my-account') ->> 'account_id')::uuid),
-               (select id from basejump.accounts where slug = 'my-account'),
-               'get_account_by_slug returns the correct account_id'
+               (select (get_team_by_slug('my-account') ->> 'team_id')::uuid),
+               (select id from basejump.teams where slug = 'my-account'),
+               'get_team_by_slug returns the correct team_id'
            );
 
 select is(
-               (select json_array_length(get_accounts())),
+               (select json_array_length(get_teams())),
                3,
-               'get_accounts returns 2 accounts'
+               'get_teams returns 2 teams'
            );
 
 
 -- insert known account id into accounts table for testing later
-insert into basejump.accounts (id, slug, name)
+insert into basejump.teams (id, slug, name)
 values ('00000000-0000-0000-0000-000000000000', 'my-known-account', 'My Known Account');
 
 -- get_account_id should return the correct account id
 select is(
-               (select public.get_account_id('my-known-account')),
+               (select public.get_team_id('my-known-account')),
                '00000000-0000-0000-0000-000000000000'::uuid,
-               'get_account_id should return the correct id'
+               'get_team_id should return the correct id'
            );
 
 select is(
-               (select (public.get_account('00000000-0000-0000-0000-000000000000') ->> 'account_id')::uuid),
+               (select (public.get_team('00000000-0000-0000-0000-000000000000') ->> 'team_id')::uuid),
                '00000000-0000-0000-0000-000000000000'::uuid,
-               'get_account should be able to return a known account'
+               'get_team should be able to return a known team'
            );
 
 ----- updating accounts should work
-select update_account('00000000-0000-0000-0000-000000000000', slug => 'my-updated-slug');
+select update_team('00000000-0000-0000-0000-000000000000', slug => 'my-updated-slug');
 
 select is(
-               (select slug from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select slug from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                'my-updated-slug',
                'Updating slug should have been successful for the owner'
            );
 
-select update_account('00000000-0000-0000-0000-000000000000', name => 'My Updated Account Name');
+select update_team('00000000-0000-0000-0000-000000000000', name => 'My Updated Account Name');
 
 select is(
-               (select name from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select name from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                'My Updated Account Name',
                'Updating team name should have been successful for the owner'
            );
 
-select update_account('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo', 'bar'));
+select update_team('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo', 'bar'));
 
 select is(
-               (select public_metadata from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo": "bar"
                }'::jsonb,
                'Updating meta should have been successful for the owner'
            );
 
-select update_account('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo', 'bar2'));
+select update_team('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo', 'bar2'));
 
 select is(
-               (select public_metadata from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo": "bar2"
                }'::jsonb,
                'Updating meta should have been successful for the owner'
            );
 
-select update_account('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo2', 'bar'));
+select update_team('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo2', 'bar'));
 
 select is(
-               (select public_metadata from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo": "bar2",
                  "foo2": "bar"
@@ -94,11 +94,11 @@ select is(
                'Updating meta should have merged by default'
            );
 
-select update_account('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo3', 'bar'),
+select update_team('00000000-0000-0000-0000-000000000000', public_metadata => jsonb_build_object('foo3', 'bar'),
                       replace_metadata => true);
 
 select is(
-               (select public_metadata from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo3": "bar"
                }'::jsonb,
@@ -107,17 +107,17 @@ select is(
 
 -- get_account should return public metadata
 select is(
-               (select (get_account('00000000-0000-0000-0000-000000000000') ->> 'metadata')::jsonb),
+               (select (get_team('00000000-0000-0000-0000-000000000000') ->> 'metadata')::jsonb),
                '{
                  "foo3": "bar"
                }'::jsonb,
                'get_account should return public metadata'
            );
 
-select update_account('00000000-0000-0000-0000-000000000000', name => 'My Updated Account Name 2');
+select update_team('00000000-0000-0000-0000-000000000000', name => 'My Updated Account Name 2');
 
 select is(
-               (select public_metadata from basejump.accounts where id = '00000000-0000-0000-0000-000000000000'),
+               (select public_metadata from basejump.teams where id = '00000000-0000-0000-0000-000000000000'),
                '{
                  "foo3": "bar"
                }'::jsonb,
@@ -129,14 +129,14 @@ select is(
 select tests.clear_authentication();
 set role postgres;
 
-insert into basejump.account_user (account_id, account_role, user_id)
+insert into basejump.team_user (team_id, team_role, user_id)
 values ('00000000-0000-0000-0000-000000000000', 'member', tests.get_supabase_uid('test_member'));
 
 select tests.authenticate_as('test_member');
 
 select throws_ok(
-               $$select update_account('00000000-0000-0000-0000-000000000000', slug => 'my-updated-slug-200')$$,
-               'Only account owners can update an account'
+               $$select update_team('00000000-0000-0000-0000-000000000000', slug => 'my-updated-slug-200')$$,
+               'Only team owners can update a team'
            );
 -------
 --- Second user
@@ -145,55 +145,55 @@ select throws_ok(
 select tests.authenticate_as('test2');
 
 select throws_ok(
-               $$select get_account('00000000-0000-0000-0000-000000000000')$$,
+               $$select get_team('00000000-0000-0000-0000-000000000000')$$,
                'Not found'
            );
 
 select throws_ok(
-               $$select get_account_by_slug('my-known-account')$$,
+               $$select get_team_by_slug('my-known-account')$$,
                'Not found'
            );
 
 select throws_ok(
-               $$select current_user_account_role('00000000-0000-0000-0000-000000000000')$$,
+               $$select current_user_team_role('00000000-0000-0000-0000-000000000000')$$,
                'Not found'
            );
 
 select is(
-               (select json_array_length(get_accounts())),
+               (select json_array_length(get_teams())),
                1,
-               'get_accounts returns 1 accounts (personal)'
+               'get_teams returns 1 teams (personal)'
            );
 
 select is(
-               (select get_personal_account() ->> 'account_id'),
+               (select get_personal_team() ->> 'team_id'),
                auth.uid()::text,
-               'get_personal_account should return the correct account_id'
+               'get_personal_team should return the correct team_id'
            );
 
 
-select throws_ok($$select create_account('my-account', 'My account')$$,
-                 'An account with that unique ID already exists');
+select throws_ok($$select create_team('my-account', 'My account')$$,
+                 'A team with that unique ID already exists');
 
-select create_account('My AccOunt & 3');
+select create_team('My AccOunt & 3');
 
 select is(
-               (select (get_account_by_slug('my-account-3') ->> 'account_id')::uuid),
-               (select id from basejump.accounts where slug = 'my-account-3'),
-               'get_account_by_slug returns the correct account_id'
+               (select (get_team_by_slug('my-account-3') ->> 'team_id')::uuid),
+               (select id from basejump.teams where slug = 'my-account-3'),
+               'get_team_by_slug returns the correct team_id'
            );
 
 select is(
-               (select json_array_length(get_accounts())),
+               (select json_array_length(get_teams())),
                2,
-               'get_accounts returns 2 accounts (personal and team)'
+               'get_teams returns 2 teams (personal and team)'
            );
 
 
 -- Should not be able to update an account you aren't a member of
 
 select throws_ok(
-               $$select update_account('00000000-0000-0000-0000-000000000000', slug => 'my-account-new-slug')$$,
+               $$select update_team('00000000-0000-0000-0000-000000000000', slug => 'my-account-new-slug')$$,
                'Not found'
            );
 
@@ -202,23 +202,23 @@ select throws_ok(
 select tests.clear_authentication();
 
 select throws_ok(
-               $$select get_account('00000000-0000-0000-0000-000000000000')$$,
-               'permission denied for function get_account'
+               $$select get_team('00000000-0000-0000-0000-000000000000')$$,
+               'permission denied for function get_team'
            );
 
 select throws_ok(
-               $$select get_account_by_slug('my-account-3')$$,
-               'permission denied for function get_account_by_slug'
+               $$select get_team_by_slug('my-account-3')$$,
+               'permission denied for function get_team_by_slug'
            );
 
 select throws_ok(
-               $$select current_user_account_role('00000000-0000-0000-0000-000000000000')$$,
-               'permission denied for function current_user_account_role'
+               $$select current_user_team_role('00000000-0000-0000-0000-000000000000')$$,
+               'permission denied for function current_user_team_role'
            );
 
 select throws_ok(
-               $$select get_accounts()$$,
-               'permission denied for function get_accounts'
+               $$select get_teams()$$,
+               'permission denied for function get_teams'
            );
 
 
@@ -226,23 +226,23 @@ select throws_ok(
 select tests.authenticate_as_service_role();
 
 select is(
-               (select (get_account('00000000-0000-0000-0000-000000000000') ->> 'account_id')::uuid),
+               (select (get_team('00000000-0000-0000-0000-000000000000') ->> 'team_id')::uuid),
                '00000000-0000-0000-0000-000000000000'::uuid,
-               'get_account should return the correct account_id'
+               'get_team should return the correct team_id'
            );
 
 select is(
-               (select (get_account_by_slug('my-updated-slug') ->> 'account_id')::uuid),
-               (select id from basejump.accounts where slug = 'my-updated-slug'),
-               'get_account_by_slug returns the correct account_id'
+               (select (get_team_by_slug('my-updated-slug') ->> 'team_id')::uuid),
+               (select id from basejump.teams where slug = 'my-updated-slug'),
+               'get_team_by_slug returns the correct team_id'
            );
 
-select update_account('00000000-0000-0000-0000-000000000000', slug => 'my-updated-slug-300');
+select update_team('00000000-0000-0000-0000-000000000000', slug => 'my-updated-slug-300');
 
 select is(
-               (select get_account('00000000-0000-0000-0000-000000000000') ->> 'slug'),
+               (select get_team('00000000-0000-0000-0000-000000000000') ->> 'slug'),
                'my-updated-slug-300',
-               'Updating the account slug should work for service_role users'
+               'Updating the team slug should work for service_role users'
            );
 
 SELECT *
