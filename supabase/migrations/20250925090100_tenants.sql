@@ -263,6 +263,22 @@ $$;
 
 grant execute on function tenancy.has_role_on_team(uuid, tenancy.team_role) to authenticated;
 
+/**
+ * Helper function to get the cutoff time for invitation expiration
+ * This function has the proper search_path to work with test time manipulation
+ */
+create or replace function tenancy.get_cutoff_time()
+    returns timestamptz
+    language sql
+    security definer
+    set search_path = ''
+as
+$$
+select pg_catalog.now() - interval '24 hours';
+$$;
+
+grant execute on function tenancy.get_cutoff_time() to authenticated;
+
 
 /**
  * Returns team_ids that the current user is a member of. If you pass in a role,
@@ -498,7 +514,7 @@ $$
 BEGIN
     -- check if the user is a member of the team or a service_role user
     if current_user IN ('anon', 'authenticated') and
-       (select current_user_team_role(get_team.team_id) ->> 'team_role' IS NULL) then
+       (select public.current_user_team_role(get_team.team_id) ->> 'team_role' IS NULL) then
         raise exception 'You must be a member of a team to access it';
     end if;
 
@@ -596,7 +612,7 @@ BEGIN
 
     -- check if postgres role is service_role
     if current_user IN ('anon', 'authenticated') and
-       not (select current_user_team_role(update_team.team_id) ->> 'team_role' = 'owner') then
+       not (select public.current_user_team_role(update_team.team_id) ->> 'team_role' = 'owner') then
         raise exception 'Only team owners can update a team';
     end if;
 

@@ -136,10 +136,10 @@ CREATE OR REPLACE FUNCTION tenancy.trigger_set_timestamps()
 $$
 BEGIN
     if TG_OP = 'INSERT' then
-        NEW.created_at = now();
-        NEW.updated_at = now();
+        NEW.created_at = pg_catalog.now();
+        NEW.updated_at = pg_catalog.now();
     else
-        NEW.updated_at = now();
+        NEW.updated_at = pg_catalog.now();
         NEW.created_at = OLD.created_at;
     end if;
     RETURN NEW;

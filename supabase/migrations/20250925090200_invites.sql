@@ -78,7 +78,7 @@ alter table tenancy.invitations
     for select
     to authenticated
     using (
-            created_at > (now() - interval '24 hours')
+            created_at > (tenancy.get_cutoff_time())
         and
             tenancy.has_role_on_team(team_id, 'owner') = true
     );
@@ -161,13 +161,17 @@ declare
     lookup_team_id       uuid;
     declare new_member_role tenancy.team_role;
     lookup_team_slug     text;
+    cutoff_time          timestamptz;
 begin
+    -- Calculate cutoff time using helper function
+    cutoff_time := tenancy.get_cutoff_time();
+    
     select i.team_id, i.team_role, a.slug
     into lookup_team_id, new_member_role, lookup_team_slug
     from tenancy.invitations i
              join tenancy.teams a on a.id = i.team_id
     where i.token = lookup_invitation_token
-      and i.created_at > now() - interval '24 hours';
+      and i.created_at > cutoff_time;
 
     if lookup_team_id IS NULL then
         raise exception 'Invitation not found';
@@ -178,7 +182,7 @@ begin
         insert into tenancy.team_user (team_id, user_id, team_role)
         values (lookup_team_id, auth.uid(), new_member_role);
         -- email types of invitations are only good for one usage
-        delete from tenancy.invitations where token = lookup_invitation_token and invitation_type = 'one_time';
+        delete from tenancy.invitations where tenancy.invitations.token = lookup_invitation_token and tenancy.invitations.invitation_type = 'one_time';
     end if;
     return json_build_object('team_id', lookup_team_id, 'team_role', new_member_role, 'slug',
                              lookup_team_slug);
@@ -199,20 +203,23 @@ grant execute on function public.accept_invitation(text) to authenticated;
 create or replace function public.lookup_invitation(lookup_invitation_token text)
     returns json
     language plpgsql
-    security definer 
+    security definer
     set search_path = ''
 as
 $$
 declare
     name              text;
     invitation_active boolean;
+    cutoff_time       timestamptz;
 begin
-    select team_name,
-           case when id IS NOT NULL then true else false end as active
+    -- Calculate cutoff time using helper function
+    cutoff_time := tenancy.get_cutoff_time();
+    
+    select tenancy.invitations.team_name,
+           case when tenancy.invitations.created_at > cutoff_time then true else false end as active
     into name, invitation_active
     from tenancy.invitations
-    where token = lookup_invitation_token
-      and created_at > now() - interval '24 hours'
+    where tenancy.invitations.token = lookup_invitation_token
     limit 1;
     return json_build_object('active', coalesce(invitation_active, false), 'account_name', name);
 end;

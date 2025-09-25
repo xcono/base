@@ -11,17 +11,9 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      - name: Supabase Start
-        run: supabase db start
-
-      - name: Reset database (apply migrations)
-        run: supabase db reset --yes
-
-      - name: Setup supabase testing
+      
+      - name: Start Supabase and Run Tests
         run: |
-          psql -v ON_ERROR_STOP=1 -U postgres -d postgres -h localhost -p 54322 -f .github/workflows/tests.sql
-        env:
-          PGPASSWORD: postgres
-
-      - name: Run Tests
-        run: supabase test db
+          supabase start
+          supabase db reset --yes
+          supabase test db
