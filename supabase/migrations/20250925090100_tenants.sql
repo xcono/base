@@ -461,6 +461,7 @@ grant execute on function public.update_team_user_role(uuid, uuid, tenancy.team_
 create or replace function public.get_teams()
     returns json
     language sql
+    set search_path = public, tenancy
 as
 $$
 select coalesce(json_agg(
@@ -487,6 +488,7 @@ grant execute on function public.get_teams() to authenticated;
 create or replace function public.get_team(team_id uuid)
     returns json
     language plpgsql
+    set search_path = public, tenancy
 as
 $$
 BEGIN
@@ -528,6 +530,7 @@ grant execute on function public.get_team(uuid) to authenticated, service_role;
 create or replace function public.get_team_by_slug(slug text)
     returns json
     language plpgsql
+    set search_path = public, tenancy
 as
 $$
 DECLARE

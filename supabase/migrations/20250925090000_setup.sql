@@ -102,7 +102,8 @@ BEGIN
     SELECT * from tenancy.config limit 1 into result;
     return row_to_json(result);
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = tenancy;
 
 grant execute on function tenancy.get_config() to authenticated, service_role;
 
@@ -120,7 +121,8 @@ BEGIN
     execute format('select %I from tenancy.config limit 1', field_name) into result;
     return result;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = tenancy;
 
 grant execute on function tenancy.is_set(text) to authenticated;
 
@@ -174,11 +176,12 @@ CREATE OR REPLACE FUNCTION tenancy.generate_token(length int)
     RETURNS text AS
 $$
 select regexp_replace(replace(
-                              replace(replace(replace(encode(gen_random_bytes(length)::bytea, 'base64'), '/', ''), '+',
+                              replace(replace(replace(encode(extensions.gen_random_bytes(length)::bytea, 'base64'), '/', ''), '+',
                                               ''), '\', ''),
                               '=',
                               ''), E'[\\n\\r]+', '', 'g');
-$$ LANGUAGE sql;
+$$ LANGUAGE sql
+SET search_path = public, extensions;
 
 grant execute on function tenancy.generate_token(int) to authenticated;
 
