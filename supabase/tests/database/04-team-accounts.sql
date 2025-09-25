@@ -120,7 +120,7 @@ SELECT ok(
                'Teams not a member of should NOT be returned by the basejump.get_teams_with_role function'
            );
 
--- should return true for basejump.has_role_on_account
+-- should return true for basejump.has_role_on_team
 SELECT ok(
                (select basejump.has_role_on_team('8fcec130-27cd-4374-9e47-3303f9529479', 'owner')),
                'Should return true for basejump.has_role_on_team'
@@ -131,7 +131,7 @@ SELECT ok(
                'Should return true for basejump.has_role_on_team'
            );
 
--- should return FALSE when not on the account
+-- should return FALSE when not on the team
 SELECT ok(
                (select NOT basejump.has_role_on_team('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f')),
                'Should return false for basejump.has_role_on_team'
@@ -155,7 +155,7 @@ values ('8fcec130-27cd-4374-9e47-3303f9529479', 'owner', tests.get_supabase_uid(
 -----------
 select tests.authenticate_as('test_member');
 
--- should now have access to the account
+-- should now have access to the team
 SELECT is(
                (select count(*)::int from basejump.teams where id = '8fcec130-27cd-4374-9e47-3303f9529479'),
                1,
@@ -201,16 +201,16 @@ SELECT ok(
                'Newly added team ID should be in the list of teams returned by basejump.get_teams_with_role()'
            );
 
--- should return true for basejump.has_role_on_account
+-- should return true for basejump.has_role_on_team
 SELECT ok(
-               (select basejump.has_role_on_account('8fcec130-27cd-4374-9e47-3303f9529479')),
-               'Should return true for basejump.has_role_on_account'
+               (select basejump.has_role_on_team('8fcec130-27cd-4374-9e47-3303f9529479')),
+               'Should return true for basejump.has_role_on_team'
            );
 
 -- should return false for the owner lookup
 SELECT ok(
-               (select NOT basejump.has_role_on_account('8fcec130-27cd-4374-9e47-3303f9529479', 'owner')),
-               'Should return false for basejump.has_role_on_account'
+               (select NOT basejump.has_role_on_team('8fcec130-27cd-4374-9e47-3303f9529479', 'owner')),
+               'Should return false for basejump.has_role_on_team'
            );
 
 -----------
@@ -218,27 +218,27 @@ SELECT ok(
 -----------
 select tests.authenticate_as('test_owner');
 
--- should now have access to the account
+-- should now have access to the team
 SELECT is(
-               (select count(*)::int from basejump.accounts where id = '8fcec130-27cd-4374-9e47-3303f9529479'),
+               (select count(*)::int from basejump.teams where id = '8fcec130-27cd-4374-9e47-3303f9529479'),
                1,
-               'Should now have access to the account'
+               'Should now have access to the team'
            );
 
 -- account_user should have a role of member
 SELECT row_eq(
-               $$ select account_role from basejump.account_user where account_id = '8fcec130-27cd-4374-9e47-3303f9529479' and user_id = tests.get_supabase_uid('test_owner')$$,
-               ROW ('owner'::basejump.account_role),
-               'Should have the expected account role'
+               $$ select team_role from basejump.team_user where team_id = '8fcec130-27cd-4374-9e47-3303f9529479' and user_id = tests.get_supabase_uid('test_owner')$$,
+               ROW ('owner'::basejump.team_role),
+               'Should have the expected team role'
            );
 
 -- should be able to get your own role for the account
 SELECT row_eq(
-               $$ select public.current_user_account_role('8fcec130-27cd-4374-9e47-3303f9529479') $$,
+               $$ select public.current_user_team_role('8fcec130-27cd-4374-9e47-3303f9529479') $$,
                ROW (jsonb_build_object(
-                       'account_role', 'owner',
+                       'team_role', 'owner',
                        'is_primary_owner', FALSE,
-                       'is_personal_account', FALSE
+                       'is_personal_team', FALSE
                    )),
                'Owner should be able to get their own role'
            );
@@ -246,15 +246,15 @@ SELECT row_eq(
 -- Should NOT show up as an owner in the permissions check
 SELECT ok(
                (select '8fcec130-27cd-4374-9e47-3303f9529479' IN
-                       (select basejump.get_accounts_with_role('owner'))),
-               'Newly added account ID should not be in the list of accounts returned by basejump.get_accounts_with_role("owner")'
+                       (select basejump.get_teams_with_role('owner'))),
+               'Newly added team ID should be in the list of teams returned by basejump.get_teams_with_role("owner")'
            );
 
 -- Should be able ot get a full list of accounts when no permission passed in
 SELECT ok(
                (select '8fcec130-27cd-4374-9e47-3303f9529479' IN
-                       (select basejump.get_accounts_with_role())),
-               'Newly added account ID should be in the list of accounts returned by basejump.get_accounts_with_role()'
+                       (select basejump.get_teams_with_role())),
+               'Newly added team ID should be in the list of teams returned by basejump.get_teams_with_role()'
            );
 
 SELECT results_eq(
