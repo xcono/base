@@ -1,0 +1,560 @@
+---
+# Specify the following for Cursor rules
+description: Comprehensive security guidelines for Supabase development with business logic analysis
+alwaysApply: false
+---
+
+# Supabase Security: Comprehensive Development Guidelines
+
+You are a Supabase security expert responsible for ensuring robust, secure implementations. This rule provides comprehensive security analysis, business logic validation, and implementation guidelines for Supabase applications.
+
+## 🎯 Core Security Principles
+
+### 1. **Defense in Depth**
+- Implement multiple security layers (RLS, function permissions, triggers, validation)
+- Never rely on a single security mechanism
+- Validate security at every layer of the application
+
+### 2. **Principle of Least Privilege**
+- Grant minimal necessary permissions
+- Use `SECURITY INVOKER` by default, `SECURITY DEFINER` only when required
+- Restrict function access to specific roles
+
+### 3. **Business Logic Security**
+- Analyze business requirements before implementing security
+- Ensure security policies align with business rules
+- Validate that security doesn't break legitimate business flows
+
+## 🔍 Security Analysis Framework
+
+### Phase 1: Business Logic Analysis
+
+Before implementing any security measures, analyze the business logic:
+
+1. **Identify Core Entities**
+   - Users, teams, organizations, resources
+   - Relationships and dependencies
+   - Data sensitivity levels
+
+2. **Map Access Patterns**
+   - Who needs access to what data?
+   - When should access be granted/revoked?
+   - What are the business rules for data sharing?
+
+3. **Define Permission Matrix**
+   - Create a comprehensive matrix of roles vs. permissions
+   - Document all business scenarios
+   - Identify edge cases and exceptions
+
+### Phase 2: Technical Security Implementation
+
+#### Row Level Security (RLS) Best Practices
+
+**✅ DO:**
+```sql
+-- Enable RLS on ALL tables
+ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;
+
+-- Use specific policies for each operation
+CREATE POLICY "Users can view own data" ON my_table
+    FOR SELECT TO authenticated
+    USING (user_id = auth.uid());
+
+CREATE POLICY "Users can insert own data" ON my_table
+    FOR INSERT TO authenticated
+    WITH CHECK (user_id = auth.uid());
+
+-- Use (select auth.uid()) for performance
+CREATE POLICY "Optimized user access" ON my_table
+    FOR SELECT TO authenticated
+    USING ((select auth.uid()) = user_id);
+
+-- Add indexes for RLS performance
+CREATE INDEX idx_my_table_user_id ON my_table(user_id);
+```
+
+**❌ DON'T:**
+```sql
+-- Never disable RLS without explicit business justification
+ALTER TABLE my_table DISABLE RLS;
+
+-- Don't use overly broad policies
+CREATE POLICY "Everyone can access" ON my_table
+    FOR ALL TO authenticated
+    USING (true);
+
+-- Don't use current_user instead of auth.uid()
+CREATE POLICY "Bad practice" ON my_table
+    FOR SELECT TO authenticated
+    USING (current_user = 'authenticated');
+```
+
+#### Function Security Best Practices
+
+**✅ DO:**
+```sql
+-- Default to SECURITY INVOKER
+CREATE OR REPLACE FUNCTION public.safe_function()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+    -- Function logic here
+    RETURN '{"status": "success"}';
+END;
+$$;
+
+-- Use SECURITY DEFINER only when necessary with proper justification
+CREATE OR REPLACE FUNCTION public.elevated_function()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, tenancy
+AS $$
+BEGIN
+    -- Only use when you need elevated privileges
+    -- Document why SECURITY DEFINER is required
+    PERFORM some_elevated_operation();
+END;
+$$;
+
+-- Grant minimal necessary permissions
+GRANT EXECUTE ON FUNCTION public.safe_function() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.elevated_function() TO service_role;
+```
+
+**❌ DON'T:**
+```sql
+-- Don't use SECURITY DEFINER without justification
+CREATE OR REPLACE FUNCTION public.bad_function()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER  -- Why is this needed?
+AS $$
+BEGIN
+    -- Function logic
+END;
+$$;
+
+-- Don't grant excessive permissions
+GRANT ALL ON FUNCTION public.safe_function() TO PUBLIC;
+```
+
+#### Role-Based Access Control (RBAC)
+
+**✅ DO:**
+```sql
+-- Create specific roles for different access levels
+CREATE ROLE team_owner;
+CREATE ROLE team_member;
+CREATE ROLE admin;
+
+-- Grant specific permissions
+GRANT SELECT, INSERT, UPDATE ON tenancy.teams TO team_owner;
+GRANT SELECT ON tenancy.teams TO team_member;
+
+-- Use role-based policies
+CREATE POLICY "Team owners can manage teams" ON tenancy.teams
+    FOR ALL TO team_owner
+    USING (tenancy.has_role_on_team(id, 'owner'));
+```
+
+**❌ DON'T:**
+```sql
+-- Don't create overly broad roles
+CREATE ROLE super_user;
+GRANT ALL ON ALL TABLES TO super_user;
+
+-- Don't use generic role names
+CREATE ROLE user;  -- Too generic
+```
+
+## 🚨 Common Security Vulnerabilities & Fixes
+
+### 1. **Service Role Key Exposure**
+
+**❌ Vulnerability:**
+```javascript
+// NEVER expose service role key on client
+const supabase = createClient(url, serviceRoleKey); // DANGEROUS!
+```
+
+**✅ Fix:**
+```javascript
+// Use anon key on client, service role only in Edge Functions
+const supabase = createClient(url, anonKey); // Safe
+
+// In Edge Functions, use environment variables
+const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
+```
+
+### 2. **Missing RLS on New Tables**
+
+**❌ Vulnerability:**
+```sql
+-- Table created without RLS
+CREATE TABLE sensitive_data (
+    id uuid PRIMARY KEY,
+    user_id uuid REFERENCES auth.users(id),
+    data text
+);
+-- Missing: ALTER TABLE sensitive_data ENABLE ROW LEVEL SECURITY;
+```
+
+**✅ Fix:**
+```sql
+CREATE TABLE sensitive_data (
+    id uuid PRIMARY KEY,
+    user_id uuid REFERENCES auth.users(id),
+    data text
+);
+
+-- Always enable RLS
+ALTER TABLE sensitive_data ENABLE ROW LEVEL SECURITY;
+
+-- Add appropriate policies
+CREATE POLICY "Users can access own data" ON sensitive_data
+    FOR ALL TO authenticated
+    USING (user_id = auth.uid());
+```
+
+### 3. **Insecure Function Permissions**
+
+**❌ Vulnerability:**
+```sql
+-- Function accessible to everyone
+CREATE FUNCTION public.dangerous_function()
+RETURNS void AS $$
+BEGIN
+    DELETE FROM users; -- Dangerous!
+END;
+$$ LANGUAGE plpgsql;
+
+-- Missing: GRANT statement (defaults to PUBLIC)
+```
+
+**✅ Fix:**
+```sql
+CREATE FUNCTION public.safe_function()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+    -- Safe operations only
+    UPDATE users SET last_login = now() WHERE id = auth.uid();
+END;
+$$;
+
+-- Grant to specific roles only
+GRANT EXECUTE ON FUNCTION public.safe_function() TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.safe_function() FROM PUBLIC;
+```
+
+### 4. **SQL Injection via Dynamic Queries**
+
+**❌ Vulnerability:**
+```sql
+CREATE FUNCTION public.vulnerable_function(table_name text)
+RETURNS void AS $$
+BEGIN
+    EXECUTE format('SELECT * FROM %I', table_name);
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**✅ Fix:**
+```sql
+CREATE FUNCTION public.safe_function()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+    -- Use parameterized queries
+    SELECT * FROM public.safe_table WHERE id = $1;
+END;
+$$;
+```
+
+### 5. **Insufficient Input Validation**
+
+**❌ Vulnerability:**
+```sql
+CREATE FUNCTION public.accept_invitation(token text)
+RETURNS void AS $$
+BEGIN
+    -- No validation of token format or expiration
+    INSERT INTO team_members (user_id, team_id)
+    SELECT auth.uid(), team_id FROM invitations WHERE token = accept_invitation.token;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**✅ Fix:**
+```sql
+CREATE FUNCTION public.accept_invitation(token text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+    invitation_record record;
+BEGIN
+    -- Validate token format
+    IF length(token) != 30 OR token !~ '^[A-Za-z0-9]+$' THEN
+        RAISE EXCEPTION 'Invalid token format';
+    END IF;
+    
+    -- Check expiration and existence
+    SELECT * INTO invitation_record
+    FROM invitations
+    WHERE token = accept_invitation.token
+    AND created_at > now() - interval '24 hours';
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Invitation not found or expired';
+    END IF;
+    
+    -- Safe to proceed
+    INSERT INTO team_members (user_id, team_id, role)
+    VALUES (auth.uid(), invitation_record.team_id, invitation_record.role);
+    
+    RETURN jsonb_build_object('success', true, 'team_id', invitation_record.team_id);
+END;
+$$;
+```
+
+## 🔧 Security Implementation Checklist
+
+### Pre-Implementation Analysis
+
+- [ ] **Business Logic Mapping**
+  - [ ] Identify all entities and relationships
+  - [ ] Map user roles and permissions
+  - [ ] Document data access patterns
+  - [ ] Identify sensitive data and compliance requirements
+
+- [ ] **Security Requirements**
+  - [ ] Define authentication requirements
+  - [ ] Specify authorization rules
+  - [ ] Identify data encryption needs
+  - [ ] Plan audit logging requirements
+
+### Implementation Phase
+
+- [ ] **Database Security**
+  - [ ] Enable RLS on all tables
+  - [ ] Create granular RLS policies
+  - [ ] Add performance indexes for RLS
+  - [ ] Implement proper foreign key constraints
+  - [ ] Set up audit triggers
+
+- [ ] **Function Security**
+  - [ ] Use SECURITY INVOKER by default
+  - [ ] Document SECURITY DEFINER usage
+  - [ ] Set search_path to empty string
+  - [ ] Grant minimal necessary permissions
+  - [ ] Implement input validation
+
+- [ ] **API Security**
+  - [ ] Use anon key on client side
+  - [ ] Protect service role key
+  - [ ] Implement rate limiting
+  - [ ] Add request validation
+  - [ ] Set up CORS properly
+
+### Post-Implementation Validation
+
+- [ ] **Security Testing**
+  - [ ] Test RLS policies with different roles
+  - [ ] Verify function permissions
+  - [ ] Test edge cases and error conditions
+  - [ ] Validate input sanitization
+  - [ ] Check for information disclosure
+
+- [ ] **Performance Testing**
+  - [ ] Test RLS performance with large datasets
+  - [ ] Verify index effectiveness
+  - [ ] Monitor function execution times
+  - [ ] Test concurrent access patterns
+
+## 🛡️ Multi-Tenant Security Patterns
+
+### Team-Based Multi-Tenancy
+
+**✅ Secure Implementation:**
+```sql
+-- Teams table with proper isolation
+CREATE TABLE tenancy.teams (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    primary_owner_user_id uuid REFERENCES auth.users(id) NOT NULL,
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now()
+);
+
+-- Enable RLS
+ALTER TABLE tenancy.teams ENABLE ROW LEVEL SECURITY;
+
+-- Team membership junction table
+CREATE TABLE tenancy.team_user (
+    team_id uuid REFERENCES tenancy.teams(id) ON DELETE CASCADE,
+    user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+    role tenancy.team_role NOT NULL,
+    PRIMARY KEY (team_id, user_id)
+);
+
+ALTER TABLE tenancy.team_user ENABLE ROW LEVEL SECURITY;
+
+-- Secure team access policy
+CREATE POLICY "Users can access their teams" ON tenancy.teams
+    FOR SELECT TO authenticated
+    USING (
+        id IN (
+            SELECT team_id FROM tenancy.team_user 
+            WHERE user_id = auth.uid()
+        )
+    );
+
+-- Secure team user access policy
+CREATE POLICY "Users can view team members" ON tenancy.team_user
+    FOR SELECT TO authenticated
+    USING (
+        team_id IN (
+            SELECT team_id FROM tenancy.team_user 
+            WHERE user_id = auth.uid()
+        )
+    );
+```
+
+### Resource Isolation
+
+**✅ Secure Resource Access:**
+```sql
+-- Resources table with team isolation
+CREATE TABLE tenancy.resources (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    team_id uuid REFERENCES tenancy.teams(id) ON DELETE CASCADE NOT NULL,
+    name text NOT NULL,
+    data jsonb,
+    created_by uuid REFERENCES auth.users(id) NOT NULL,
+    created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE tenancy.resources ENABLE ROW LEVEL SECURITY;
+
+-- Secure resource access policy
+CREATE POLICY "Team members can access team resources" ON tenancy.resources
+    FOR ALL TO authenticated
+    USING (
+        team_id IN (
+            SELECT team_id FROM tenancy.team_user 
+            WHERE user_id = auth.uid()
+        )
+    );
+```
+
+## 🔍 Security Audit Procedures
+
+### Automated Security Checks
+
+1. **RLS Policy Validation**
+   ```sql
+   -- Check for tables without RLS
+   SELECT schemaname, tablename 
+   FROM pg_tables 
+   WHERE schemaname = 'public' 
+   AND tablename NOT IN (
+       SELECT tablename FROM pg_policies
+   );
+   ```
+
+2. **Function Permission Audit**
+   ```sql
+   -- Check function permissions
+   SELECT 
+       n.nspname as schema_name,
+       p.proname as function_name,
+       r.rolname as granted_to,
+       pr.privilege_type
+   FROM pg_proc p
+   JOIN pg_namespace n ON p.pronamespace = n.oid
+   JOIN pg_proc_acl pa ON p.oid = pa.oid
+   JOIN pg_roles r ON pa.grantee = r.oid
+   JOIN pg_privileges pr ON pa.privilege_type = pr.privilege_type
+   WHERE n.nspname = 'public';
+   ```
+
+3. **Service Role Key Exposure Check**
+   ```bash
+   # Check for service role key in client code
+   grep -r "service.*role.*key" src/
+   grep -r "SUPABASE_SERVICE_ROLE_KEY" src/
+   ```
+
+### Manual Security Review
+
+1. **Business Logic Validation**
+   - Review all RLS policies against business requirements
+   - Verify permission matrix implementation
+   - Test all user roles and scenarios
+   - Validate edge cases and error conditions
+
+2. **Code Review Checklist**
+   - [ ] All tables have RLS enabled
+   - [ ] RLS policies are granular and specific
+   - [ ] Functions use appropriate security settings
+   - [ ] Input validation is comprehensive
+   - [ ] Error messages don't leak information
+   - [ ] Audit logging is implemented
+   - [ ] Performance considerations are addressed
+
+## 🚀 Security Best Practices Summary
+
+### Database Layer
+- Enable RLS on all tables
+- Create specific policies for each operation
+- Use `(select auth.uid())` for performance
+- Add indexes for RLS columns
+- Implement proper foreign key constraints
+
+### Function Layer
+- Default to SECURITY INVOKER
+- Document SECURITY DEFINER usage
+- Set search_path to empty string
+- Grant minimal necessary permissions
+- Implement comprehensive input validation
+
+### API Layer
+- Use anon key on client side
+- Protect service role key in Edge Functions
+- Implement rate limiting
+- Validate all inputs
+- Use proper CORS settings
+
+### Application Layer
+- Implement proper error handling
+- Add audit logging
+- Use HTTPS everywhere
+- Implement session management
+- Regular security updates
+
+## 📚 Additional Resources
+
+- [Supabase Security Documentation](https://supabase.com/docs/guides/database/postgres/row-level-security)
+- [PostgreSQL Security Best Practices](https://www.postgresql.org/docs/current/security.html)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [Supabase RLS Performance Guide](https://github.com/GaryAustin1/RLS-Performance)
+
+---
+
+**Remember**: Security is not a one-time implementation but an ongoing process. Regularly review and update your security measures as your application evolves.

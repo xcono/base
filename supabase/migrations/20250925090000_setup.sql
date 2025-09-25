@@ -23,10 +23,10 @@
 ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA PUBLIC REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;
 
--- Create basejump schema
-CREATE SCHEMA IF NOT EXISTS basejump;
-GRANT USAGE ON SCHEMA basejump to authenticated;
-GRANT USAGE ON SCHEMA basejump to service_role;
+-- Create tenancy schema
+CREATE SCHEMA IF NOT EXISTS tenancy;
+GRANT USAGE ON SCHEMA tenancy to authenticated;
+GRANT USAGE ON SCHEMA tenancy to service_role;
 
 /**
   * -------------------------------------------------------
@@ -42,13 +42,13 @@ GRANT USAGE ON SCHEMA basejump to service_role;
 DO
 $$
     BEGIN
-        -- check it account_role already exists on basejump schema
+        -- check it account_role already exists on tenancy schema
         IF NOT EXISTS(SELECT 1
                       FROM pg_type t
                                JOIN pg_namespace n ON n.oid = t.typnamespace
                       WHERE t.typname = 'invitation_type'
-                        AND n.nspname = 'basejump') THEN
-            CREATE TYPE basejump.invitation_type AS ENUM ('one_time', '24_hour');
+                        AND n.nspname = 'tenancy') THEN
+            CREATE TYPE tenancy.invitation_type AS ENUM ('one_time', '24_hour');
         end if;
     end;
 $$;
@@ -59,26 +59,23 @@ $$;
   * -------------------------------------------------------
  */
 
-CREATE TABLE IF NOT EXISTS basejump.config
+CREATE TABLE IF NOT EXISTS tenancy.config
 (
-    enable_team_accounts            boolean default true,
-    enable_personal_account_billing boolean default true,
-    enable_team_account_billing     boolean default true,
-    billing_provider                text    default 'stripe'
+    service_name                text    default 'stripe'
 );
 
 -- create config row
-INSERT INTO basejump.config (enable_team_accounts, enable_personal_account_billing, enable_team_account_billing)
-VALUES (true, true, true);
+INSERT INTO tenancy.config (service_name)
+VALUES ('supabase');
 
 -- enable select on the config table
-GRANT SELECT ON basejump.config TO authenticated, service_role;
+GRANT SELECT ON tenancy.config TO authenticated, service_role;
 
 -- enable RLS on config
-ALTER TABLE basejump.config
+ALTER TABLE tenancy.config
     ENABLE ROW LEVEL SECURITY;
 
-create policy "Basejump settings can be read by authenticated users" on basejump.config
+create policy "Basejump settings can be read by authenticated users" on tenancy.config
     for select
     to authenticated
     using (
@@ -92,47 +89,47 @@ create policy "Basejump settings can be read by authenticated users" on basejump
  */
 
 /**
-  basejump.get_config()
-  Get the full config object to check basejump settings
+  tenancy.get_config()
+  Get the full config object to check tenancy settings
   This is not accessible from the outside, so can only be used inside postgres functions
  */
-CREATE OR REPLACE FUNCTION basejump.get_config()
+CREATE OR REPLACE FUNCTION tenancy.get_config()
     RETURNS json AS
 $$
 DECLARE
     result RECORD;
 BEGIN
-    SELECT * from basejump.config limit 1 into result;
+    SELECT * from tenancy.config limit 1 into result;
     return row_to_json(result);
 END;
 $$ LANGUAGE plpgsql;
 
-grant execute on function basejump.get_config() to authenticated, service_role;
+grant execute on function tenancy.get_config() to authenticated, service_role;
 
 
 /**
-  basejump.is_set("field_name")
+  tenancy.is_set("field_name")
   Check a specific boolean config value
  */
-CREATE OR REPLACE FUNCTION basejump.is_set(field_name text)
+CREATE OR REPLACE FUNCTION tenancy.is_set(field_name text)
     RETURNS boolean AS
 $$
 DECLARE
     result BOOLEAN;
 BEGIN
-    execute format('select %I from basejump.config limit 1', field_name) into result;
+    execute format('select %I from tenancy.config limit 1', field_name) into result;
     return result;
 END;
 $$ LANGUAGE plpgsql;
 
-grant execute on function basejump.is_set(text) to authenticated;
+grant execute on function tenancy.is_set(text) to authenticated;
 
 
 /**
   * Automatic handling for maintaining created_at and updated_at timestamps
   * on tables
  */
-CREATE OR REPLACE FUNCTION basejump.trigger_set_timestamps()
+CREATE OR REPLACE FUNCTION tenancy.trigger_set_timestamps()
     RETURNS TRIGGER AS
 $$
 BEGIN
@@ -152,7 +149,7 @@ $$ LANGUAGE plpgsql;
   * Automatic handling for maintaining created_by and updated_by timestamps
   * on tables
  */
-CREATE OR REPLACE FUNCTION basejump.trigger_set_user_tracking()
+CREATE OR REPLACE FUNCTION tenancy.trigger_set_user_tracking()
     RETURNS TRIGGER AS
 $$
 BEGIN
@@ -168,12 +165,12 @@ END
 $$ LANGUAGE plpgsql;
 
 /**
-  basejump.generate_token(length)
+  tenancy.generate_token(length)
   Generates a secure token - used internally for invitation tokens
   but could be used elsewhere.  Check out the invitations table for more info on
   how it's used
  */
-CREATE OR REPLACE FUNCTION basejump.generate_token(length int)
+CREATE OR REPLACE FUNCTION tenancy.generate_token(length int)
     RETURNS text AS
 $$
 select regexp_replace(replace(
@@ -183,6 +180,6 @@ select regexp_replace(replace(
                               ''), E'[\\n\\r]+', '', 'g');
 $$ LANGUAGE sql;
 
-grant execute on function basejump.generate_token(int) to authenticated;
+grant execute on function tenancy.generate_token(int) to authenticated;
 
 

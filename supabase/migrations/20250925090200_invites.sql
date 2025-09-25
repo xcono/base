@@ -8,16 +8,16 @@
  * Invitations are sent to users to join a team
  * They pre-define the role the user should have once they join
  */
-create table if not exists basejump.invitations
+create table if not exists tenancy.invitations
 (
     -- the id of the invitation
     id                 uuid unique                                              not null default extensions.uuid_generate_v4(),
     -- what role should invitation accepters be given in this account
-    team_role          basejump.team_role                                       not null,
+    team_role          tenancy.team_role                                       not null,
     -- the team the invitation is for
-    team_id            uuid references basejump.teams (id) on delete cascade    not null,
+    team_id            uuid references tenancy.teams (id) on delete cascade    not null,
     -- unique token used to accept the invitation
-    token              text unique                                              not null default basejump.generate_token(30),
+    token              text unique                                              not null default tenancy.generate_token(30),
     -- who created the invitation
     invited_by_user_id uuid references auth.users                               not null,
     -- team name. filled in by a trigger
@@ -27,82 +27,75 @@ create table if not exists basejump.invitations
     -- when the invitation was created
     created_at         timestamp with time zone,
     -- what type of invitation is this
-    invitation_type    basejump.invitation_type                                 not null,
+    invitation_type    tenancy.invitation_type                                 not null,
     primary key (id)
 );
 
 -- Open up access to invitations
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE basejump.invitations TO authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE tenancy.invitations TO authenticated, service_role;
 
 -- manage timestamps
-CREATE TRIGGER basejump_set_invitations_timestamp
+CREATE TRIGGER tenancy_set_invitations_timestamp
     BEFORE INSERT OR UPDATE
-    ON basejump.invitations
+    ON tenancy.invitations
     FOR EACH ROW
-EXECUTE FUNCTION basejump.trigger_set_timestamps();
+EXECUTE FUNCTION tenancy.trigger_set_timestamps();
 
 /**
   * This funciton fills in account info and inviting user email
   * so that the recipient can get more info about the invitation prior to
   * accepting.  It allows us to avoid complex permissions on accounts
  */
-CREATE OR REPLACE FUNCTION basejump.trigger_set_invitation_details()
+CREATE OR REPLACE FUNCTION tenancy.trigger_set_invitation_details()
     RETURNS TRIGGER AS
 $$
 BEGIN
     NEW.invited_by_user_id = auth.uid();
-    NEW.team_name = (select name from basejump.teams where id = NEW.team_id);
+    NEW.team_name = (select name from tenancy.teams where id = NEW.team_id);
     RETURN NEW;
 END
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER basejump_trigger_set_invitation_details
+CREATE TRIGGER tenancy_trigger_set_invitation_details
     BEFORE INSERT
-    ON basejump.invitations
+    ON tenancy.invitations
     FOR EACH ROW
-EXECUTE FUNCTION basejump.trigger_set_invitation_details();
+EXECUTE FUNCTION tenancy.trigger_set_invitation_details();
 
 -- enable RLS on invitations
-alter table basejump.invitations
+alter table tenancy.invitations
     enable row level security;
 
 /**
   * -------------------------
   * Section - RLS Policies
   * -------------------------
- * This is where we define access to tables in the basejump schema
+ * This is where we define access to tables in the tenancy schema
  */
 
- create policy "Invitations viewable by team owners" on basejump.invitations
+ create policy "Invitations viewable by team owners" on tenancy.invitations
     for select
     to authenticated
     using (
             created_at > (now() - interval '24 hours')
         and
-            basejump.has_role_on_team(team_id, 'owner') = true
+            tenancy.has_role_on_team(team_id, 'owner') = true
     );
 
 
-create policy "Invitations can be created by team owners" on basejump.invitations
+create policy "Invitations can be created by team owners" on tenancy.invitations
     for insert
     to authenticated
     with check (
-    -- team accounts should be enabled
-            basejump.is_set('enable_team_accounts') = true
-        -- this should not be a personal team
-        and (SELECT personal_team
-             FROM basejump.teams
-             WHERE id = team_id) = false
         -- the inserting user should be an owner of the team
-        and
-            (basejump.has_role_on_team(team_id, 'owner') = true)
+        (tenancy.has_role_on_team(team_id, 'owner') = true)
     );
 
-create policy "Invitations can be deleted by team owners" on basejump.invitations
+create policy "Invitations can be deleted by team owners" on tenancy.invitations
     for delete
     to authenticated
     using (
-    basejump.has_role_on_team(team_id, 'owner') = true
+    tenancy.has_role_on_team(team_id, 'owner') = true
     );
 
 
@@ -140,7 +133,7 @@ BEGIN
                                    'invitation_id', i.id
                                )
                        )
-            from basejump.invitations i
+            from tenancy.invitations i
             where i.team_id = get_team_invitations.team_id
               and i.created_at > now() - interval '24 hours'
             limit coalesce(get_team_invitations.results_limit, 25) offset coalesce(get_team_invitations.results_offset, 0));
@@ -158,18 +151,18 @@ grant execute on function public.get_team_invitations(uuid, integer, integer) to
 create or replace function public.accept_invitation(lookup_invitation_token text)
     returns jsonb
     language plpgsql
-    security definer set search_path = public, basejump
+    security definer set search_path = public, tenancy
 as
 $$
 declare
     lookup_team_id       uuid;
-    declare new_member_role basejump.team_role;
+    declare new_member_role tenancy.team_role;
     lookup_team_slug     text;
 begin
     select i.team_id, i.team_role, a.slug
     into lookup_team_id, new_member_role, lookup_team_slug
-    from basejump.invitations i
-             join basejump.teams a on a.id = i.team_id
+    from tenancy.invitations i
+             join tenancy.teams a on a.id = i.team_id
     where i.token = lookup_invitation_token
       and i.created_at > now() - interval '24 hours';
 
@@ -179,10 +172,10 @@ begin
 
     if lookup_team_id is not null then
         -- we've validated the token is real, so grant the user access
-        insert into basejump.team_user (team_id, user_id, team_role)
+        insert into tenancy.team_user (team_id, user_id, team_role)
         values (lookup_team_id, auth.uid(), new_member_role);
         -- email types of invitations are only good for one usage
-        delete from basejump.invitations where token = lookup_invitation_token and invitation_type = 'one_time';
+        delete from tenancy.invitations where token = lookup_invitation_token and invitation_type = 'one_time';
     end if;
     return json_build_object('team_id', lookup_team_id, 'team_role', new_member_role, 'slug',
                              lookup_team_slug);
@@ -203,7 +196,7 @@ grant execute on function public.accept_invitation(text) to authenticated;
 create or replace function public.lookup_invitation(lookup_invitation_token text)
     returns json
     language plpgsql
-    security definer set search_path = public, basejump
+    security definer set search_path = public, tenancy
 as
 $$
 declare
@@ -213,7 +206,7 @@ begin
     select team_name,
            case when id IS NOT NULL then true else false end as active
     into name, invitation_active
-    from basejump.invitations
+    from tenancy.invitations
     where token = lookup_invitation_token
       and created_at > now() - interval '24 hours'
     limit 1;
@@ -227,16 +220,16 @@ grant execute on function public.lookup_invitation(text) to authenticated;
 /**
   Allows a user to create a new invitation if they are an owner of a team
  */
-create or replace function public.create_invitation(team_id uuid, team_role basejump.team_role,
-                                                    invitation_type basejump.invitation_type)
+create or replace function public.create_invitation(team_id uuid, team_role tenancy.team_role,
+                                                    invitation_type tenancy.invitation_type)
     returns json
     language plpgsql
 as
 $$
 declare
-    new_invitation basejump.invitations;
+    new_invitation tenancy.invitations;
 begin
-    insert into basejump.invitations (team_id, team_role, invitation_type, invited_by_user_id)
+    insert into tenancy.invitations (team_id, team_role, invitation_type, invited_by_user_id)
     values (team_id, team_role, invitation_type, auth.uid())
     returning * into new_invitation;
 
@@ -244,7 +237,7 @@ begin
 end
 $$;
 
-grant execute on function public.create_invitation(uuid, basejump.team_role, basejump.invitation_type) to authenticated;
+grant execute on function public.create_invitation(uuid, tenancy.team_role, tenancy.invitation_type) to authenticated;
 
 /**
   Allows an owner to delete an existing invitation
@@ -257,13 +250,13 @@ as
 $$
 begin
     -- verify account owner for the invitation
-    if basejump.has_role_on_team(
-               (select team_id from basejump.invitations where id = delete_invitation.invitation_id), 'owner') <>
+    if tenancy.has_role_on_team(
+               (select team_id from tenancy.invitations where id = delete_invitation.invitation_id), 'owner') <>
        true then
         raise exception 'Only team owners can delete invitations';
     end if;
 
-    delete from basejump.invitations where id = delete_invitation.invitation_id;
+    delete from tenancy.invitations where id = delete_invitation.invitation_id;
 end
 $$;
 

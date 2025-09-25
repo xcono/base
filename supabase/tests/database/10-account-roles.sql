@@ -2,9 +2,6 @@ BEGIN;
 create extension "basejump-supabase_test_helpers" version '0.0.6';
 
 select plan(17);
--- make sure we're setup for enabling personal accounts
-update basejump.config
-set enable_team_accounts = true;
 
 -- setup users needed for testing
 select tests.create_supabase_user('primary');
@@ -14,14 +11,14 @@ select tests.create_supabase_user('member');
 --- start acting as an authenticated user
 select tests.authenticate_as('primary');
 
-insert into basejump.teams (id, name, slug, personal_team)
-values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'test', 'test', false);
+insert into tenancy.teams (id, name, slug)
+values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'test', 'test');
 
 -- setup users for tests
 set local role postgres;
-insert into basejump.team_user (team_id, user_id, team_role)
+insert into tenancy.team_user (team_id, user_id, team_role)
 values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', tests.get_supabase_uid('owner'), 'owner');
-insert into basejump.team_user (team_id, user_id, team_role)
+insert into tenancy.team_user (team_id, user_id, team_role)
 values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', tests.get_supabase_uid('member'), 'member');
 
 --------
@@ -31,7 +28,7 @@ select tests.authenticate_as('member');
 
 -- can't update role directly in the team_user table
 SELECT results_ne(
-               $$ update basejump.team_user set team_role = 'owner' where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') returning 1 $$,
+               $$ update tenancy.team_user set team_role = 'owner' where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') returning 1 $$,
                $$ values(1) $$,
                'Members should not be able to update their own role'
            );
@@ -44,8 +41,8 @@ SELECT throws_ok(
 
 -- member should still be only a member
 SELECT row_eq(
-               $$ select team_role from basejump.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
-               ROW ('member'::basejump.team_role),
+               $$ select team_role from tenancy.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
+               ROW ('member'::tenancy.team_role),
                'Member should still be a member'
            );
 
@@ -56,7 +53,7 @@ select tests.authenticate_as('owner');
 
 -- can't update role directly in the team_user table
 SELECT results_ne(
-               $$ update basejump.team_user set team_role = 'owner' where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') returning 1 $$,
+               $$ update tenancy.team_user set team_role = 'owner' where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') returning 1 $$,
                $$ values(1) $$,
                'Members should not be able to update their own role'
            );
@@ -68,8 +65,8 @@ SELECT throws_ok(
            );
 
 SELECT row_eq(
-               $$ select team_role from basejump.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
-               ROW ('member'::basejump.team_role),
+               $$ select team_role from tenancy.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
+               ROW ('member'::tenancy.team_role),
                'Member should still be a member since primary owner change failed'
            );
 
@@ -82,14 +79,14 @@ SELECT throws_ok(
 
 --- primary owner should still be the same
 SELECT row_eq(
-               $$ select team_role from basejump.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('primary') $$,
-               ROW ('owner'::basejump.team_role),
+               $$ select team_role from tenancy.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('primary') $$,
+               ROW ('owner'::tenancy.team_role),
                'Primary owner should still be the same'
            );
 
 -- account should have the same primary_owner_user_id
 SELECT row_eq(
-               $$ select primary_owner_user_id from basejump.teams where id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' $$,
+               $$ select primary_owner_user_id from tenancy.teams where id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' $$,
                ROW (tests.get_supabase_uid('primary')),
                'Primary owner should still be the same'
            );
@@ -102,8 +99,8 @@ SELECT lives_ok(
 
 -- member should now be an owner
 SELECT row_eq(
-               $$ select team_role from basejump.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
-               ROW ('owner'::basejump.team_role),
+               $$ select team_role from tenancy.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
+               ROW ('owner'::tenancy.team_role),
                'Member should now be an owner'
            );
 
@@ -114,7 +111,7 @@ select tests.authenticate_as('primary');
 
 -- can't update role directly in the team_user table
 SELECT results_ne(
-               $$ update basejump.team_user set team_role = 'member' where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') returning 1 $$,
+               $$ update tenancy.team_user set team_role = 'member' where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') returning 1 $$,
                $$ values(1) $$,
                'Members should not be able to update their own role'
            );
@@ -127,8 +124,8 @@ SELECT lives_ok(
 
 -- member should now be a member
 SELECT row_eq(
-               $$ select team_role from basejump.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
-               ROW ('member'::basejump.team_role),
+               $$ select team_role from tenancy.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
+               ROW ('member'::tenancy.team_role),
                'Member should now be a member'
            );
 
@@ -140,14 +137,14 @@ SELECT lives_ok(
 
 -- member should now be a primary owner
 SELECT row_eq(
-               $$ select team_role from basejump.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
-               ROW ('owner'::basejump.team_role),
+               $$ select team_role from tenancy.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' and user_id = tests.get_supabase_uid('member') $$,
+               ROW ('owner'::tenancy.team_role),
                'Member should now be a primary owner'
            );
 
 -- account primary_owner_user_id should be updated
 SELECT row_eq(
-               $$ select primary_owner_user_id from basejump.teams where id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' $$,
+               $$ select primary_owner_user_id from tenancy.teams where id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' $$,
                ROW (tests.get_supabase_uid('member')),
                'Primary owner should be updated'
            );

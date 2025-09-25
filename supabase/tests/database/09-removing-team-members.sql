@@ -3,9 +3,6 @@ create extension "basejump-supabase_test_helpers" version '0.0.6';
 
 select plan(6);
 
--- make sure we're setup for enabling personal accounts
-update basejump.config
-set enable_team_accounts = true;
 
 -- create the users we need for testing
 select tests.create_supabase_user('primary_owner');
@@ -19,11 +16,11 @@ select create_team('test', 'Test Team');
 
 set role postgres;
 
-insert into basejump.team_user (team_id, team_role, user_id)
+insert into tenancy.team_user (team_id, team_role, user_id)
 values (get_team_id('test'), 'member', tests.get_supabase_uid('member'));
-insert into basejump.team_user (team_id, team_role, user_id)
+insert into tenancy.team_user (team_id, team_role, user_id)
 values (get_team_id('test'), 'owner', tests.get_supabase_uid('invited_owner'));
-insert into basejump.team_user (team_id, team_role, user_id)
+insert into tenancy.team_user (team_id, team_role, user_id)
 values (get_team_id('test'), 'member', tests.get_supabase_uid('testing_member'));
 
 ---  can NOT remove a member unless your an owner
@@ -45,7 +42,7 @@ select lives_ok(
 select tests.authenticate_as('testing_member');
 
 SELECT is(
-               (select basejump.has_role_on_team(get_team_id('test'))),
+               (select tenancy.has_role_on_team(get_team_id('test'))),
                false,
                'Should no longer have access to the team'
            );
@@ -61,7 +58,7 @@ select remove_team_member(get_team_id('test'), tests.get_supabase_uid('primary_o
 select tests.authenticate_as('primary_owner');
 
 SELECT is(
-               (select basejump.has_role_on_team(get_team_id('test'), 'owner')),
+               (select tenancy.has_role_on_team(get_team_id('test'), 'owner')),
                true,
                'Primary owner should still be on the account'
            );
@@ -74,7 +71,7 @@ select lives_ok(
 select tests.authenticate_as('invited_owner');
 
 SELECT is(
-               (select basejump.has_role_on_team(get_team_id('test'))),
+               (select tenancy.has_role_on_team(get_team_id('test'))),
                false,
                'Should no longer have access to the team'
            );

@@ -15,8 +15,8 @@ $$
                       FROM pg_type t
                                JOIN pg_namespace n ON n.oid = t.typnamespace
                       WHERE t.typname = 'subscription_status'
-                        AND n.nspname = 'basejump') THEN
-            create type basejump.subscription_status as enum (
+                        AND n.nspname = 'tenancy') THEN
+            create type tenancy.subscription_status as enum (
                 'trialing',
                 'active',
                 'canceled',
@@ -34,10 +34,10 @@ $$;
  * Billing customer
  * This is a private table that contains a mapping of team IDs to your billing providers IDs
  */
-create table if not exists basejump.billing_customers
+create table if not exists tenancy.billing_customers
 (
     -- Team ID
-    team_id uuid references basejump.teams (id) on delete cascade not null,
+    team_id uuid references tenancy.teams (id) on delete cascade not null,
     -- The user's customer ID in Stripe. User must not be able to update this.
     id         text primary key,
     -- The email address the customer wants to use for invoicing
@@ -49,27 +49,27 @@ create table if not exists basejump.billing_customers
 );
 
 -- Open up access to billing_customers
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE basejump.billing_customers TO service_role;
-GRANT SELECT ON TABLE basejump.billing_customers TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE tenancy.billing_customers TO service_role;
+GRANT SELECT ON TABLE tenancy.billing_customers TO authenticated;
 
 
 -- enable RLS for billing_customers
 alter table
-    basejump.billing_customers
+    tenancy.billing_customers
     enable row level security;
 
 /**
   * Billing subscriptions
  * This is a private table that contains a mapping of team IDs to your billing providers subscription IDs
  */
-create table if not exists basejump.billing_subscriptions
+create table if not exists tenancy.billing_subscriptions
 (
     -- Subscription ID from Stripe, e.g. sub_1234.
     id                   text primary key,
-    team_id              uuid references basejump.teams (id) on delete cascade          not null,
-    billing_customer_id  text references basejump.billing_customers (id) on delete cascade not null,
+    team_id              uuid references tenancy.teams (id) on delete cascade          not null,
+    billing_customer_id  text references tenancy.billing_customers (id) on delete cascade not null,
     -- The status of the subscription object, one of subscription_status type above.
-    status               basejump.subscription_status,
+    status               tenancy.subscription_status,
     -- Set of key-value pairs, used to store additional information about the object in a structured format.
     metadata             jsonb,
     -- ID of the price that created this subscription.
@@ -99,32 +99,32 @@ create table if not exists basejump.billing_subscriptions
 );
 
 -- Open up access to billing_subscriptions
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE basejump.billing_subscriptions TO service_role;
-GRANT SELECT ON TABLE basejump.billing_subscriptions TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE tenancy.billing_subscriptions TO service_role;
+GRANT SELECT ON TABLE tenancy.billing_subscriptions TO authenticated;
 
 -- enable RLS for billing_subscriptions
 alter table
-    basejump.billing_subscriptions
+    tenancy.billing_subscriptions
     enable row level security;
 
 /**
   * -------------------------
   * Section - RLS Policies
   * -------------------------
-  * This is where we define access to tables in the basejump schema
+  * This is where we define access to tables in the tenancy schema
  */
 
-create policy "Can only view own billing customer data." on basejump.billing_customers for
+create policy "Can only view own billing customer data." on tenancy.billing_customers for
     select
     using (
-    basejump.has_role_on_team(team_id) = true
+    tenancy.has_role_on_team(team_id) = true
     );
 
 
-create policy "Can only view own billing subscription data." on basejump.billing_subscriptions for
+create policy "Can only view own billing subscription data." on tenancy.billing_subscriptions for
     select
     using (
-    basejump.has_role_on_team(team_id) = true
+    tenancy.has_role_on_team(team_id) = true
     );
 
 /**
@@ -142,7 +142,7 @@ create policy "Can only view own billing subscription data." on basejump.billing
 CREATE OR REPLACE FUNCTION public.get_team_billing_status(team_id uuid)
     RETURNS jsonb
     security definer
-    set search_path = public, basejump
+    set search_path = public, tenancy
 AS
 $$
 DECLARE
@@ -154,9 +154,6 @@ BEGIN
     select jsonb_build_object(
                    'team_id', get_team_billing_status.team_id,
                    'billing_subscription_id', s.id,
-                   'billing_enabled', case
-                                          when a.personal_team = true then config.enable_personal_account_billing
-                                          else config.enable_team_account_billing end,
                    'billing_status', s.status,
                    'billing_customer_id', c.id,
                    'billing_provider', config.billing_provider,
@@ -164,11 +161,11 @@ BEGIN
                    coalesce(c.email, u.email) -- if we don't have a customer email, use the user's email as a fallback
                )
     into result
-    from basejump.teams a
+    from tenancy.teams a
              join auth.users u on u.id = a.primary_owner_user_id
-             left join basejump.billing_subscriptions s on s.team_id = a.id
-             left join basejump.billing_customers c on c.team_id = coalesce(s.team_id, a.id)
-             join basejump.config config on true
+             left join tenancy.billing_subscriptions s on s.team_id = a.id
+             left join tenancy.billing_customers c on c.team_id = coalesce(s.team_id, a.id)
+             join tenancy.config config on true
     where a.id = get_team_billing_status.team_id
     order by s.created desc
     limit 1;
@@ -190,7 +187,7 @@ $$
 BEGIN
     -- if the customer is not null, upsert the data into billing_customers, only upsert fields that are present in the jsonb object
     if customer is not null then
-        insert into basejump.billing_customers (id, team_id, email, provider)
+        insert into tenancy.billing_customers (id, team_id, email, provider)
         values (customer ->> 'id', service_role_upsert_customer_subscription.team_id, customer ->> 'billing_email',
                 (customer ->> 'provider'))
         on conflict (id) do update
@@ -199,12 +196,12 @@ BEGIN
 
     -- if the subscription is not null, upsert the data into billing_subscriptions, only upsert fields that are present in the jsonb object
     if subscription is not null then
-        insert into basejump.billing_subscriptions (id, team_id, billing_customer_id, status, metadata, price_id,
+        insert into tenancy.billing_subscriptions (id, team_id, billing_customer_id, status, metadata, price_id,
                                                     quantity, cancel_at_period_end, created, current_period_start,
                                                     current_period_end, ended_at, cancel_at, canceled_at, trial_start,
                                                     trial_end, plan_name, provider)
         values (subscription ->> 'id', service_role_upsert_customer_subscription.team_id,
-                subscription ->> 'billing_customer_id', (subscription ->> 'status')::basejump.subscription_status,
+                subscription ->> 'billing_customer_id', (subscription ->> 'status')::tenancy.subscription_status,
                 subscription -> 'metadata',
                 subscription ->> 'price_id', (subscription ->> 'quantity')::int,
                 (subscription ->> 'cancel_at_period_end')::boolean,
@@ -216,7 +213,7 @@ BEGIN
                 subscription ->> 'plan_name', (subscription ->> 'provider'))
         on conflict (id) do update
             set billing_customer_id  = subscription ->> 'billing_customer_id',
-                status               = (subscription ->> 'status')::basejump.subscription_status,
+                status               = (subscription ->> 'status')::tenancy.subscription_status,
                 metadata             = subscription -> 'metadata',
                 price_id             = subscription ->> 'price_id',
                 quantity             = (subscription ->> 'quantity')::int,

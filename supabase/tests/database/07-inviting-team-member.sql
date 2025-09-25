@@ -3,9 +3,6 @@ create extension "basejump-supabase_test_helpers" version '0.0.6';
 
 select plan(10);
 
--- make sure we're setup for enabling personal accounts
-update basejump.config
-set enable_team_accounts = true;
 
 --- Create the users we need for testing
 select tests.create_supabase_user('test1');
@@ -14,12 +11,12 @@ select tests.create_supabase_user('invited');
 --- start acting as an authenticated user
 select tests.authenticate_as('test1');
 
-insert into basejump.teams (id, name, slug, personal_team)
-values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'test', 'test', false);
+insert into tenancy.teams (id, name, slug)
+values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'test', 'test');
 
 -- create invitation
 SELECT row_eq(
-               $$ insert into basejump.invitations (team_id, team_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_member_single_use_token', 'one_time') returning 1 $$,
+               $$ insert into tenancy.invitations (team_id, team_role, token, invitation_type) values ('d126ecef-35f6-4b5d-9f28-d9f00a9fb46f', 'member', 'test_member_single_use_token', 'one_time') returning 1 $$,
                ROW (1),
                'Owners should be able to add invitations for new members'
            );
@@ -29,7 +26,7 @@ select tests.authenticate_as('invited');
 
 -- should NOT be able to lookup invitations directly
 SELECT is(
-               (select count(*)::int from basejump.invitations),
+               (select count(*)::int from tenancy.invitations),
                0,
                'Cannot load invitations directly'
            );
@@ -69,14 +66,14 @@ SELECT lives_ok(
 -- should be able to get the team from get_accounts_with_role
 SELECT ok(
                (select 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f' IN
-                       (select basejump.get_teams_with_role())),
+                       (select tenancy.get_teams_with_role())),
                'Should now be a part of the team'
            );
 
 -- should have the correct role on the team
 SELECT row_eq(
-               $$ select team_role from basejump.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f'::uuid and user_id = tests.get_supabase_uid('invited') $$,
-               ROW ('member'::basejump.team_role),
+               $$ select team_role from tenancy.team_user where team_id = 'd126ecef-35f6-4b5d-9f28-d9f00a9fb46f'::uuid and user_id = tests.get_supabase_uid('invited') $$,
+               ROW ('member'::tenancy.team_role),
                'Should have the correct team role after accepting an invitation'
            );
 

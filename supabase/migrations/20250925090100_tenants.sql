@@ -27,13 +27,13 @@
 DO
 $$
     BEGIN
-        -- check if team_role already exists on basejump schema
+        -- check if team_role already exists on tenancy schema
         IF NOT EXISTS(SELECT 1
                       FROM pg_type t
                                JOIN pg_namespace n ON n.oid = t.typnamespace
                       WHERE t.typname = 'team_role'
-                        AND n.nspname = 'basejump') THEN
-            CREATE TYPE basejump.team_role AS ENUM ('owner', 'member');
+                        AND n.nspname = 'tenancy') THEN
+            CREATE TYPE tenancy.team_role AS ENUM ('owner', 'member');
         end if;
     end;
 $$;
@@ -43,7 +43,7 @@ $$;
  * the system. They have many users, and all billing is connected to
  * a team.
  */
-CREATE TABLE IF NOT EXISTS basejump.teams
+CREATE TABLE IF NOT EXISTS tenancy.teams
 (
     id                    uuid unique                NOT NULL DEFAULT extensions.uuid_generate_v4(),
     -- defaults to the user who creates the team
@@ -53,7 +53,6 @@ CREATE TABLE IF NOT EXISTS basejump.teams
     -- Team name
     name                  text,
     slug                  text unique,
-    personal_team         boolean                             default false not null,
     updated_at            timestamp with time zone,
     created_at            timestamp with time zone,
     created_by            uuid references auth.users,
@@ -63,23 +62,16 @@ CREATE TABLE IF NOT EXISTS basejump.teams
     PRIMARY KEY (id)
 );
 
--- constraint that conditionally allows nulls on the slug ONLY if personal_team is true
--- remove this if you want to ignore teams slugs entirely
-ALTER TABLE basejump.teams
-    ADD CONSTRAINT basejump_teams_slug_null_if_personal_team_true CHECK (
-            (personal_team = true AND slug is null)
-            OR (personal_team = false AND slug is not null)
-        );
 
 -- Open up access to teams
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE basejump.teams TO authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE tenancy.teams TO authenticated, service_role;
 
 /**
  * We want to protect some fields on teams from being updated
  * Specifically the primary owner user id and team id.
  * primary_owner_user_id should be updated using the dedicated function
  */
-CREATE OR REPLACE FUNCTION basejump.protect_team_fields()
+CREATE OR REPLACE FUNCTION tenancy.protect_team_fields()
     RETURNS TRIGGER AS
 $$
 BEGIN
@@ -87,7 +79,6 @@ BEGIN
         -- these are protected fields that users are not allowed to update themselves
         -- platform admins should be VERY careful about updating them as well.
         if NEW.id <> OLD.id
-            OR NEW.personal_team <> OLD.personal_team
             OR NEW.primary_owner_user_id <> OLD.primary_owner_user_id
         THEN
             RAISE EXCEPTION 'You do not have permission to update this field';
@@ -99,14 +90,14 @@ END
 $$ LANGUAGE plpgsql;
 
 -- trigger to protect team fields
-CREATE TRIGGER basejump_protect_team_fields
+CREATE TRIGGER tenancy_protect_team_fields
     BEFORE UPDATE
-    ON basejump.teams
+    ON tenancy.teams
     FOR EACH ROW
-EXECUTE FUNCTION basejump.protect_team_fields();
+EXECUTE FUNCTION tenancy.protect_team_fields();
 
 -- convert any character in the slug that's not a letter, number, or dash to a dash on insert/update for teams
-CREATE OR REPLACE FUNCTION basejump.slugify_team_slug()
+CREATE OR REPLACE FUNCTION tenancy.slugify_team_slug()
     RETURNS TRIGGER AS
 $$
 BEGIN
@@ -119,29 +110,29 @@ END
 $$ LANGUAGE plpgsql;
 
 -- trigger to slugify the team slug
-CREATE TRIGGER basejump_slugify_team_slug
+CREATE TRIGGER tenancy_slugify_team_slug
     BEFORE INSERT OR UPDATE
-    ON basejump.teams
+    ON tenancy.teams
     FOR EACH ROW
-EXECUTE FUNCTION basejump.slugify_team_slug();
+EXECUTE FUNCTION tenancy.slugify_team_slug();
 
 -- enable RLS for teams
-alter table basejump.teams
+alter table tenancy.teams
     enable row level security;
 
 -- protect the timestamps
-CREATE TRIGGER basejump_set_teams_timestamp
+CREATE TRIGGER tenancy_set_teams_timestamp
     BEFORE INSERT OR UPDATE
-    ON basejump.teams
+    ON tenancy.teams
     FOR EACH ROW
-EXECUTE PROCEDURE basejump.trigger_set_timestamps();
+EXECUTE PROCEDURE tenancy.trigger_set_timestamps();
 
 -- set the user tracking
-CREATE TRIGGER basejump_set_teams_user_tracking
+CREATE TRIGGER tenancy_set_teams_user_tracking
     BEFORE INSERT OR UPDATE
-    ON basejump.teams
+    ON tenancy.teams
     FOR EACH ROW
-EXECUTE PROCEDURE basejump.trigger_set_user_tracking();
+EXECUTE PROCEDURE tenancy.trigger_set_user_tracking();
 
 /**
   * Team users are the users that are associated with a team.
@@ -149,29 +140,29 @@ EXECUTE PROCEDURE basejump.trigger_set_user_tracking();
   * The system does not enforce any permissions for roles, other than restricting
   * billing and team membership to only owners
  */
-create table if not exists basejump.team_user
+create table if not exists tenancy.team_user
 (
     -- id of the user in the team
     user_id      uuid references auth.users on delete cascade        not null,
     -- id of the team the user is in
-    team_id      uuid references basejump.teams on delete cascade not null,
+    team_id      uuid references tenancy.teams on delete cascade not null,
     -- role of the user in the team
-    team_role    basejump.team_role                                  not null,
+    team_role    tenancy.team_role                                  not null,
     constraint team_user_pkey primary key (user_id, team_id)
 );
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE basejump.team_user TO authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE tenancy.team_user TO authenticated, service_role;
 
 
 -- enable RLS for team_user
-alter table basejump.team_user
+alter table tenancy.team_user
     enable row level security;
 
 /**
   * When a team gets created, we want to insert the current user as the first
   * owner
  */
-create or replace function basejump.add_current_user_to_new_team()
+create or replace function tenancy.add_current_user_to_new_team()
     returns trigger
     language plpgsql
     security definer
@@ -180,7 +171,7 @@ as
 $$
 begin
     if new.primary_owner_user_id = auth.uid() then
-        insert into basejump.team_user (team_id, user_id, team_role)
+        insert into tenancy.team_user (team_id, user_id, team_role)
         values (NEW.id, auth.uid(), 'owner');
     end if;
     return NEW;
@@ -188,17 +179,17 @@ end;
 $$;
 
 -- trigger the function whenever a new team is created
-CREATE TRIGGER basejump_add_current_user_to_new_team
+CREATE TRIGGER tenancy_add_current_user_to_new_team
     AFTER INSERT
-    ON basejump.teams
+    ON tenancy.teams
     FOR EACH ROW
-EXECUTE FUNCTION basejump.add_current_user_to_new_team();
+EXECUTE FUNCTION tenancy.add_current_user_to_new_team();
 
 /**
   * When a user signs up, we need to create a personal team for them
   * and add them to the team_user table so they can act on it
  */
-create or replace function basejump.run_new_user_setup()
+create or replace function tenancy.run_new_user_setup()
     returns trigger
     language plpgsql
     security definer
@@ -215,13 +206,13 @@ begin
     if new.email IS NOT NULL then
         generated_user_name := split_part(new.email, '@', 1);
     end if;
-    -- create the new users's personal team
-    insert into basejump.teams (name, primary_owner_user_id, personal_team, id)
-    values (generated_user_name, NEW.id, true, NEW.id)
+    -- create the new user's default team
+    insert into tenancy.teams (name, primary_owner_user_id, id)
+    values (generated_user_name, NEW.id, NEW.id)
     returning id into first_account_id;
 
     -- add them to the team_user table so they can act on it
-    insert into basejump.team_user (team_id, user_id, team_role)
+    insert into tenancy.team_user (team_id, user_id, team_role)
     values (first_account_id, NEW.id, 'owner');
 
     return NEW;
@@ -233,13 +224,13 @@ create trigger on_auth_user_created
     after insert
     on auth.users
     for each row
-execute procedure basejump.run_new_user_setup();
+execute procedure tenancy.run_new_user_setup();
 
 /**
   * -------------------------------------------------------
  * Section - Team permission utility functions
   * -------------------------------------------------------
-  * These functions are stored on the basejump schema, and useful for things like
+  * These functions are stored on the tenancy schema, and useful for things like
   * generating RLS policies
  */
 
@@ -249,7 +240,7 @@ execute procedure basejump.run_new_user_setup();
  * NOTE: This is an inefficient function when used on large query sets. You should reach for the get_teams_with_role and lookup
  * the team ID in those cases.
  */
-create or replace function basejump.has_role_on_team(team_id uuid, team_role basejump.team_role default null)
+create or replace function tenancy.has_role_on_team(team_id uuid, team_role tenancy.team_role default null)
     returns boolean
     language sql
     security definer
@@ -258,7 +249,7 @@ as
 $$
 select exists(
                select 1
-               from basejump.team_user wu
+               from tenancy.team_user wu
                where wu.user_id = auth.uid()
                  and wu.team_id = has_role_on_team.team_id
                  and (
@@ -268,14 +259,14 @@ select exists(
            );
 $$;
 
-grant execute on function basejump.has_role_on_team(uuid, basejump.team_role) to authenticated;
+grant execute on function tenancy.has_role_on_team(uuid, tenancy.team_role) to authenticated;
 
 
 /**
  * Returns team_ids that the current user is a member of. If you pass in a role,
  * it'll only return teams that the user is a member of with that role.
   */
-create or replace function basejump.get_teams_with_role(passed_in_role basejump.team_role default null)
+create or replace function tenancy.get_teams_with_role(passed_in_role tenancy.team_role default null)
     returns setof uuid
     language sql
     security definer
@@ -283,7 +274,7 @@ create or replace function basejump.get_teams_with_role(passed_in_role basejump.
 as
 $$
 select team_id
-from basejump.team_user wu
+from tenancy.team_user wu
 where wu.user_id = auth.uid()
   and (
             wu.team_role = passed_in_role
@@ -291,69 +282,66 @@ where wu.user_id = auth.uid()
     );
 $$;
 
-grant execute on function basejump.get_teams_with_role(basejump.team_role) to authenticated;
+grant execute on function tenancy.get_teams_with_role(tenancy.team_role) to authenticated;
 
 /**
   * -------------------------
   * Section - RLS Policies
   * -------------------------
-  * This is where we define access to tables in the basejump schema
+  * This is where we define access to tables in the tenancy schema
   */
 
-create policy "users can view their own team_users" on basejump.team_user
+create policy "users can view their own team_users" on tenancy.team_user
     for select
     to authenticated
     using (
     user_id = auth.uid()
     );
 
-create policy "users can view their teammates" on basejump.team_user
+create policy "users can view their teammates" on tenancy.team_user
     for select
     to authenticated
     using (
-    basejump.has_role_on_team(team_id) = true
+    tenancy.has_role_on_team(team_id) = true
     );
 
-create policy "Team users can be deleted by owners except primary team owner" on basejump.team_user
+create policy "Team users can be deleted by owners except primary team owner" on tenancy.team_user
     for delete
     to authenticated
     using (
-        (basejump.has_role_on_team(team_id, 'owner') = true)
+        (tenancy.has_role_on_team(team_id, 'owner') = true)
         AND
         user_id != (select primary_owner_user_id
-                    from basejump.teams
+                    from tenancy.teams
                     where team_id = teams.id)
     );
 
-create policy "Teams are viewable by members" on basejump.teams
+create policy "Teams are viewable by members" on tenancy.teams
     for select
     to authenticated
     using (
-    basejump.has_role_on_team(id) = true
+    tenancy.has_role_on_team(id) = true
     );
 
 -- Primary owner should always have access to the account
-create policy "Teams are viewable by primary owner" on basejump.teams
+create policy "Teams are viewable by primary owner" on tenancy.teams
     for select
     to authenticated
     using (
     primary_owner_user_id = auth.uid()
     );
 
-create policy "Teams can be created by any user" on basejump.teams
+create policy "Teams can be created by any user" on tenancy.teams
     for insert
     to authenticated
-    with check (
-            basejump.is_set('enable_team_accounts') = true
-        and personal_team = false
-    );
+    with check (true);
 
 
-create policy "Teams can be edited by owners" on basejump.teams
+create policy "Teams can be edited by owners" on tenancy.teams
     for update
     to authenticated
     using (
-    basejump.has_role_on_team(id, 'owner') = true
+    tenancy.has_role_on_team(id, 'owner') = true
     );
 
 /**
@@ -374,7 +362,7 @@ create or replace function public.get_team_id(slug text)
 as
 $$
 select id
-from basejump.teams
+from tenancy.teams
 where slug = get_team_id.slug;
 $$;
 
@@ -394,12 +382,11 @@ BEGIN
 
     select jsonb_build_object(
                    'team_role', wu.team_role,
-                   'is_primary_owner', a.primary_owner_user_id = auth.uid(),
-                   'is_personal_team', a.personal_team
+                   'is_primary_owner', a.primary_owner_user_id = auth.uid()
                )
     into response
-    from basejump.team_user wu
-             join basejump.teams a on a.id = wu.team_id
+    from tenancy.team_user wu
+             join tenancy.teams a on a.id = wu.team_id
     where wu.user_id = auth.uid()
       and wu.team_id = current_user_team_role.team_id;
 
@@ -418,7 +405,7 @@ grant execute on function public.current_user_team_role(uuid) to authenticated;
   * Let's you update a users role within a team if you are an owner of that team
   **/
 create or replace function public.update_team_user_role(team_id uuid, user_id uuid,
-                                                        new_team_role basejump.team_role,
+                                                        new_team_role tenancy.team_role,
                                                         make_primary_owner boolean default false)
     returns void
     security definer
@@ -432,7 +419,7 @@ declare
     changing_primary_owner   boolean;
 begin
     -- check if the user is an owner, and if they are, allow them to update the role
-    select basejump.has_role_on_team(update_team_user_role.team_id, 'owner') into is_account_owner;
+    select tenancy.has_role_on_team(update_team_user_role.team_id, 'owner') into is_account_owner;
 
     if not is_account_owner then
         raise exception 'You must be an owner of the team to update a users role';
@@ -441,14 +428,14 @@ begin
     -- check if the user being changed is the primary owner, if so its not allowed
     select primary_owner_user_id = auth.uid(), primary_owner_user_id = update_team_user_role.user_id
     into is_account_primary_owner, changing_primary_owner
-    from basejump.teams
+    from tenancy.teams
     where id = update_team_user_role.team_id;
 
     if changing_primary_owner = true and is_account_primary_owner = false then
         raise exception 'You must be the primary owner of the team to change the primary owner';
     end if;
 
-    update basejump.team_user au
+    update tenancy.team_user au
     set team_role = new_team_role
     where au.team_id = update_team_user_role.team_id
       and au.user_id = update_team_user_role.user_id;
@@ -459,14 +446,14 @@ begin
             raise exception 'You must be the primary owner of the team to change the primary owner';
         end if;
 
-        update basejump.teams
+        update tenancy.teams
         set primary_owner_user_id = update_team_user_role.user_id
         where id = update_team_user_role.team_id;
     end if;
 end;
 $$;
 
-grant execute on function public.update_team_user_role(uuid, uuid, basejump.team_role, boolean) to authenticated;
+grant execute on function public.update_team_user_role(uuid, uuid, tenancy.team_role, boolean) to authenticated;
 
 /**
   Returns the current user's teams
@@ -483,13 +470,12 @@ select coalesce(json_agg(
                                 'is_primary_owner', a.primary_owner_user_id = auth.uid(),
                                 'name', a.name,
                                 'slug', a.slug,
-                                'personal_team', a.personal_team,
                                 'created_at', a.created_at,
                                 'updated_at', a.updated_at
                             )
                     ), '[]'::json)
-from basejump.team_user wu
-         join basejump.teams a on a.id = wu.team_id
+from tenancy.team_user wu
+         join tenancy.teams a on a.id = wu.team_id
 where wu.user_id = auth.uid();
 $$;
 
@@ -517,23 +503,16 @@ BEGIN
                            'is_primary_owner', a.primary_owner_user_id = auth.uid(),
                            'name', a.name,
                            'slug', a.slug,
-                           'personal_team', a.personal_team,
-                           'billing_enabled', case
-                                                 when a.personal_team = true then
-                                                      config.enable_personal_account_billing
-                                                  else
-                                                      config.enable_team_account_billing
-                               end,
                            'billing_status', bs.status,
                            'created_at', a.created_at,
                            'updated_at', a.updated_at,
                            'metadata', a.public_metadata
                        )
-            from basejump.teams a
-                     left join basejump.team_user wu on a.id = wu.team_id and wu.user_id = auth.uid()
-                     join basejump.config config on true
+            from tenancy.teams a
+                     left join tenancy.team_user wu on a.id = wu.team_id and wu.user_id = auth.uid()
+                     join tenancy.config config on true
                      left join (select bs.team_id, status
-                                from basejump.billing_subscriptions bs
+                                from tenancy.billing_subscriptions bs
                                 where bs.team_id = get_team.team_id
                                 order by created desc
                                 limit 1) bs on bs.team_id = a.id
@@ -556,7 +535,7 @@ DECLARE
 BEGIN
     select a.id
     into internal_team_id
-    from basejump.teams a
+    from tenancy.teams a
     where a.slug IS NOT NULL
       and a.slug = get_team_by_slug.slug;
 
@@ -566,20 +545,6 @@ $$;
 
 grant execute on function public.get_team_by_slug(text) to authenticated;
 
-/**
-  Returns the personal team for the current user
- */
-create or replace function public.get_personal_team()
-    returns json
-    language plpgsql
-as
-$$
-BEGIN
-    return public.get_team(auth.uid());
-END;
-$$;
-
-grant execute on function public.get_personal_team() to authenticated;
 
 /**
   * Create a team
@@ -592,7 +557,7 @@ $$
 DECLARE
     new_team_id uuid;
 BEGIN
-    insert into basejump.teams (slug, name)
+    insert into tenancy.teams (slug, name)
     values (create_team.slug, create_team.name)
     returning id into new_team_id;
 
@@ -626,7 +591,7 @@ BEGIN
         raise exception 'Only team owners can update a team';
     end if;
 
-    update basejump.teams teams
+    update tenancy.teams teams
     set slug            = coalesce(update_team.slug, teams.slug),
         name            = coalesce(update_team.name, teams.name),
         public_metadata = case
@@ -645,7 +610,7 @@ grant execute on function public.update_team(uuid, text, text, jsonb, boolean) t
 
 /**
   Returns a list of current team members. Only team owners can access this function.
-  It's a security definer because it requries us to lookup personal_teams for existing members so we can
+  It's a security definer because it requires us to lookup user teams for existing members so we can
   get their names.
  */
 create or replace function public.get_team_members(team_id uuid, results_limit integer default 50,
@@ -653,7 +618,7 @@ create or replace function public.get_team_members(team_id uuid, results_limit i
     returns json
     language plpgsql
     security definer
-    set search_path = basejump
+    set search_path = tenancy
 as
 $$
 BEGIN
@@ -672,9 +637,9 @@ BEGIN
                                    'is_primary_owner', a.primary_owner_user_id = wu.user_id
                                )
                        )
-            from basejump.team_user wu
-                     join basejump.teams a on a.id = wu.team_id
-                     join basejump.teams p on p.primary_owner_user_id = wu.user_id and p.personal_team = true
+            from tenancy.team_user wu
+                     join tenancy.teams a on a.id = wu.team_id
+                     join tenancy.teams p on p.primary_owner_user_id = wu.user_id and p.id = p.primary_owner_user_id
                      join auth.users u on u.id = wu.user_id
             where wu.team_id = get_team_members.team_id
             limit coalesce(get_team_members.results_limit, 50) offset coalesce(get_team_members.results_offset, 0));
@@ -694,12 +659,12 @@ as
 $$
 BEGIN
     -- only team owners can access this function
-    if basejump.has_role_on_team(remove_team_member.team_id, 'owner') <> true then
+    if tenancy.has_role_on_team(remove_team_member.team_id, 'owner') <> true then
         raise exception 'Only team owners can access this function';
     end if;
 
     delete
-    from basejump.team_user wu
+    from tenancy.team_user wu
     where wu.team_id = remove_team_member.team_id
       and wu.user_id = remove_team_member.user_id;
 END;

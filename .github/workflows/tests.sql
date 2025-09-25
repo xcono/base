@@ -1,4 +1,4 @@
-create extension pgtap with schema extensions;
+create extension if not exists pgtap with schema extensions;
 
 /*---------------------
 ---- install dbdev ----
