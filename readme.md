@@ -1,12 +1,12 @@
 # Start
 
-Run `supabase start` starting containers.
+Run `supabase start` to start containers.
 
 ```bash
 supabase start
 ```
 
-Resulting to access information:
+Resulting access to information:
 ```bash
 Starting database...
 Initialising schema...
@@ -14,7 +14,7 @@ Seeding globals from roles.sql...
 WARN: no files matched pattern: supabase/seed.sql
 Starting containers...
 Waiting for health checks...
-Started supabase local development setup.
+Started Supabase local development setup.
 
          API URL: http://127.0.0.1:54321
      GraphQL URL: http://127.0.0.1:54321/graphql/v1
