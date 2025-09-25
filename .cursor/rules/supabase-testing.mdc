@@ -1,0 +1,440 @@
+---
+# Specify the following for Cursor rules
+description: Pragmatic testing guidelines for Supabase applications
+alwaysApply: false
+---
+
+# Supabase Testing: Pragmatic Guidelines for Coding Agents
+
+You are a Supabase testing expert with deep experience in building robust, testable applications. This rule provides pragmatic, actionable guidance for creating effective tests that catch real issues while remaining maintainable.
+
+## 🎯 Core Testing Principles
+
+### 1. **Test Behavior, Not Implementation**
+- Focus on what the system should do, not how it does it
+- Test user workflows and business logic
+- Avoid testing internal implementation details
+
+### 2. **Test Incrementally**
+- Make small changes and test immediately
+- Use `act` tool after each modification
+- Catch issues early before they compound
+
+### 3. **Test Security First**
+- Always test RLS policies with different user roles
+- Verify function permissions and access controls
+- Test edge cases and error conditions
+
+## 🧪 Testing Strategy Framework
+
+### Phase 1: Database Function Testing
+
+**✅ DO:**
+```sql
+-- Test function with different user contexts
+SELECT tests.authenticate_as('user1');
+SELECT row_eq(
+    $$ SELECT public.get_team('team-uuid') $$,
+    ROW(expected_json::json),
+    'Should return team data for authenticated user'
+);
+
+-- Test security boundaries
+SELECT tests.authenticate_as('user2');
+SELECT throws_ok(
+    $$ SELECT public.get_team('team-uuid') $$,
+    'Should not access team user is not member of'
+);
+```
+
+**❌ DON'T:**
+```sql
+-- Don't test implementation details
+SELECT row_eq(
+    $$ SELECT internal_function_call_count $$,
+    ROW(1),
+    'Should call internal function once' -- Implementation detail
+);
+
+-- Don't skip security testing
+SELECT row_eq(
+    $$ SELECT public.get_team('team-uuid') $$,
+    ROW(expected_json::json),
+    'Should return team data' -- Missing security context
+);
+```
+
+### Phase 2: RLS Policy Testing
+
+**✅ Comprehensive RLS Testing:**
+```sql
+-- Test all CRUD operations for each role
+SELECT tests.authenticate_as('owner');
+SELECT row_eq(
+    $$ INSERT INTO tenancy.teams (name) VALUES ('Test Team') RETURNING id $$,
+    ROW(team_id),
+    'Owners should be able to create teams'
+);
+
+SELECT tests.authenticate_as('member');
+SELECT throws_ok(
+    $$ INSERT INTO tenancy.teams (name) VALUES ('Test Team') $$,
+    'Members should not be able to create teams'
+);
+
+-- Test data isolation
+SELECT tests.authenticate_as('user1');
+SELECT row_eq(
+    $$ SELECT COUNT(*) FROM tenancy.teams $$,
+    ROW(1),
+    'User should only see their own teams'
+);
+```
+
+**❌ Incomplete RLS Testing:**
+```sql
+-- Don't test only happy path
+SELECT row_eq(
+    $$ SELECT COUNT(*) FROM tenancy.teams $$,
+    ROW(1),
+    'Should return team count' -- Missing negative test cases
+);
+```
+
+### Phase 3: Integration Testing
+
+**✅ End-to-End Workflow Testing:**
+```sql
+-- Test complete user journey
+SELECT tests.authenticate_as('owner');
+SELECT row_eq(
+    $$ SELECT create_invitation('team-uuid', 'member', 'one_time') $$,
+    ROW(json_build_object('token', 'expected-token')::json),
+    'Should create invitation successfully'
+);
+
+SELECT tests.authenticate_as('invited_user');
+SELECT row_eq(
+    $$ SELECT accept_invitation('invitation-token') $$,
+    ROW(json_build_object('team_id', 'team-uuid', 'team_role', 'member')::json),
+    'Should accept invitation and join team'
+);
+```
+
+## 🔧 Testing Tools & Patterns
+
+### Using pgTAP for Database Testing
+
+**Test Structure:**
+```sql
+-- File: supabase/tests/database/01-feature-tests.sql
+BEGIN;
+SELECT plan(10); -- Number of tests
+
+-- Setup test data
+INSERT INTO tenancy.teams (id, name, primary_owner_user_id) 
+VALUES ('test-team-id', 'Test Team', 'owner-user-id');
+
+-- Test cases
+SELECT tests.authenticate_as('owner');
+SELECT row_eq(
+    $$ SELECT public.get_team('test-team-id') $$,
+    ROW(expected_result::json),
+    'Test description'
+);
+
+-- Cleanup
+SELECT * FROM finish();
+ROLLBACK;
+```
+
+### Test Data Management
+
+**✅ Good Test Data:**
+```sql
+-- Use predictable, isolated test data
+INSERT INTO tenancy.teams (id, name, primary_owner_user_id) 
+VALUES 
+    ('team-1', 'Team One', 'user-1'),
+    ('team-2', 'Team Two', 'user-2');
+
+-- Use UUIDs for realistic testing
+INSERT INTO tenancy.invitations (id, team_id, token, invitation_type)
+VALUES 
+    ('invitation-1', 'team-1', 'valid-token-123', 'one_time'),
+    ('invitation-2', 'team-1', 'expired-token-456', 'one_time');
+```
+
+**❌ Poor Test Data:**
+```sql
+-- Don't use magic numbers or unrealistic data
+INSERT INTO tenancy.teams (id, name) VALUES (1, 'Test');
+INSERT INTO tenancy.invitations (team_id, token) VALUES (1, 'abc');
+```
+
+### Error Testing Patterns
+
+**✅ Comprehensive Error Testing:**
+```sql
+-- Test validation errors
+SELECT throws_ok(
+    $$ SELECT create_invitation('invalid-uuid', 'member', 'one_time') $$,
+    'Should reject invalid team ID'
+);
+
+-- Test business rule violations
+SELECT throws_ok(
+    $$ SELECT accept_invitation('expired-token') $$,
+    'Should reject expired invitations'
+);
+
+-- Test permission errors
+SELECT tests.authenticate_as('non-member');
+SELECT throws_ok(
+    $$ SELECT public.get_team('team-uuid') $$,
+    'Should reject access to non-member teams'
+);
+```
+
+## 🚨 Common Testing Anti-Patterns
+
+### 1. **Testing Implementation Details**
+
+**❌ Anti-Pattern:**
+```sql
+-- Testing internal function calls
+SELECT row_eq(
+    $$ SELECT internal_helper_function_call_count $$,
+    ROW(1),
+    'Should call helper function once'
+);
+```
+
+**✅ Better Approach:**
+```sql
+-- Test the behavior, not the implementation
+SELECT row_eq(
+    $$ SELECT public.get_team('team-uuid') $$,
+    ROW(expected_result::json),
+    'Should return correct team data'
+);
+```
+
+### 2. **Insufficient Security Testing**
+
+**❌ Anti-Pattern:**
+```sql
+-- Only testing with one user role
+SELECT tests.authenticate_as('owner');
+SELECT row_eq(
+    $$ SELECT COUNT(*) FROM tenancy.teams $$,
+    ROW(1),
+    'Should return team count'
+);
+```
+
+**✅ Better Approach:**
+```sql
+-- Test with multiple roles and permissions
+SELECT tests.authenticate_as('owner');
+SELECT row_eq(
+    $$ SELECT COUNT(*) FROM tenancy.teams $$,
+    ROW(1),
+    'Owners should see their teams'
+);
+
+SELECT tests.authenticate_as('member');
+SELECT row_eq(
+    $$ SELECT COUNT(*) FROM tenancy.teams $$,
+    ROW(1),
+    'Members should see their teams'
+);
+
+SELECT tests.authenticate_as('non-member');
+SELECT row_eq(
+    $$ SELECT COUNT(*) FROM tenancy.teams $$,
+    ROW(0),
+    'Non-members should see no teams'
+);
+```
+
+### 3. **Missing Edge Case Testing**
+
+**❌ Anti-Pattern:**
+```sql
+-- Only testing happy path
+SELECT row_eq(
+    $$ SELECT accept_invitation('valid-token') $$,
+    ROW(success_result::json),
+    'Should accept valid invitation'
+);
+```
+
+**✅ Better Approach:**
+```sql
+-- Test all edge cases
+SELECT row_eq(
+    $$ SELECT accept_invitation('valid-token') $$,
+    ROW(success_result::json),
+    'Should accept valid invitation'
+);
+
+SELECT throws_ok(
+    $$ SELECT accept_invitation('expired-token') $$,
+    'Should reject expired invitation'
+);
+
+SELECT throws_ok(
+    $$ SELECT accept_invitation('invalid-token') $$,
+    'Should reject invalid token'
+);
+
+SELECT throws_ok(
+    $$ SELECT accept_invitation('already-used-token') $$,
+    'Should reject already used token'
+);
+```
+
+## 🔍 Testing Checklist for Coding Agents
+
+### Pre-Test Setup
+- [ ] **Understand the business logic** - What should the system do?
+- [ ] **Identify user roles** - Who can do what?
+- [ ] **Map data relationships** - What data depends on what?
+- [ ] **Plan test scenarios** - Happy path, edge cases, error conditions
+
+### Test Implementation
+- [ ] **Use realistic test data** - UUIDs, proper relationships
+- [ ] **Test with different user contexts** - Multiple roles and permissions
+- [ ] **Include negative test cases** - What should fail and why?
+- [ ] **Test data isolation** - Users only see their own data
+- [ ] **Verify error messages** - Are they helpful but not leaky?
+
+### Test Validation
+- [ ] **Run tests incrementally** - Use `act` after each change
+- [ ] **Verify all tests pass** - No flaky or failing tests
+- [ ] **Check test coverage** - Are all scenarios covered?
+- [ ] **Review test maintainability** - Easy to understand and modify?
+
+## 🛠️ Practical Testing Examples
+
+### Testing Search Path Security Fixes
+
+**When fixing search_path issues:**
+```sql
+-- Test that functions still work after search_path changes
+SELECT tests.authenticate_as('user1');
+SELECT row_eq(
+    $$ SELECT tenancy.generate_token(30) $$,
+    ROW(token_pattern::text),
+    'Should generate token with correct format'
+);
+
+-- Test that security is maintained
+SELECT tests.authenticate_as('user2');
+SELECT throws_ok(
+    $$ SELECT public.get_team('unauthorized-team-id') $$,
+    'Should maintain security boundaries'
+);
+```
+
+### Testing Migration Changes
+
+**When applying migrations:**
+```sql
+-- Test that existing functionality still works
+SELECT tests.authenticate_as('owner');
+SELECT row_eq(
+    $$ SELECT public.create_team('test-slug', 'Test Team') $$,
+    ROW(expected_team_data::json),
+    'Should create team successfully'
+);
+
+-- Test that new functionality works
+SELECT row_eq(
+    $$ SELECT public.get_team_by_slug('test-slug') $$,
+    ROW(expected_team_data::json),
+    'Should retrieve team by slug'
+);
+```
+
+### Testing Invitation Workflows
+
+**Complete invitation testing:**
+```sql
+-- Setup
+INSERT INTO tenancy.teams (id, name, primary_owner_user_id) 
+VALUES ('test-team', 'Test Team', 'owner-user');
+
+-- Test invitation creation
+SELECT tests.authenticate_as('owner');
+SELECT row_eq(
+    $$ SELECT create_invitation('test-team', 'member', 'one_time') $$,
+    ROW(json_build_object('token', token_pattern)::json),
+    'Should create invitation successfully'
+);
+
+-- Test invitation lookup
+SELECT tests.authenticate_as('invited-user');
+SELECT row_eq(
+    $$ SELECT lookup_invitation('valid-token') $$,
+    ROW(json_build_object('active', true, 'account_name', 'Test Team')::json),
+    'Should lookup valid invitation'
+);
+
+-- Test invitation acceptance
+SELECT row_eq(
+    $$ SELECT accept_invitation('valid-token') $$,
+    ROW(json_build_object('team_id', 'test-team', 'team_role', 'member')::json),
+    'Should accept invitation successfully'
+);
+
+-- Test expiration
+SELECT tests.freeze_time(CURRENT_TIMESTAMP - interval '25 hours');
+SELECT row_eq(
+    $$ SELECT lookup_invitation('expired-token') $$,
+    ROW(json_build_object('active', false, 'account_name', null)::json),
+    'Should show expired invitation as inactive'
+);
+SELECT tests.unfreeze_time();
+```
+
+## 🚀 Testing Best Practices Summary
+
+### Database Testing
+- Test functions with multiple user contexts
+- Verify RLS policies work correctly
+- Test all CRUD operations for each role
+- Include comprehensive error testing
+- Use realistic, isolated test data
+
+### Security Testing
+- Test with different user roles and permissions
+- Verify data isolation between users/teams
+- Test edge cases and boundary conditions
+- Ensure error messages don't leak information
+- Validate that security fixes don't break functionality
+
+### Integration Testing
+- Test complete user workflows end-to-end
+- Verify data consistency across operations
+- Test error handling and recovery
+- Validate business rule enforcement
+- Test performance with realistic data volumes
+
+### Maintenance
+- Keep tests simple and focused
+- Use descriptive test names and comments
+- Make tests independent and repeatable
+- Run tests incrementally during development
+- Refactor tests when functionality changes
+
+## 📚 Testing Resources
+
+- [pgTAP Documentation](https://pgtap.org/)
+- [Supabase Testing Guide](https://supabase.com/docs/guides/database/testing)
+- [PostgreSQL Testing Best Practices](https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING)
+
+---
+
+**Remember**: Good tests catch real bugs, not implementation details. Focus on behavior, test incrementally, and always verify that security boundaries are maintained. The goal is to build confidence that your system works correctly for users while remaining maintainable for developers.
