@@ -142,7 +142,7 @@ create policy "Can only view own billing subscription data." on tenancy.billing_
 CREATE OR REPLACE FUNCTION public.get_team_billing_status(team_id uuid)
     RETURNS jsonb
     security definer
-    set search_path = public, tenancy
+    set search_path = ''
 AS
 $$
 DECLARE
@@ -228,6 +228,7 @@ BEGIN
                 plan_name            = subscription ->> 'plan_name';
     end if;
 end;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = '';
 
 GRANT EXECUTE ON FUNCTION public.service_role_upsert_customer_subscription(uuid, jsonb, jsonb) TO service_role;

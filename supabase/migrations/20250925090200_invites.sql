@@ -54,7 +54,8 @@ BEGIN
     NEW.team_name = (select name from tenancy.teams where id = NEW.team_id);
     RETURN NEW;
 END
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = '';
 
 CREATE TRIGGER tenancy_trigger_set_invitation_details
     BEFORE INSERT
@@ -117,6 +118,7 @@ create or replace function public.get_team_invitations(team_id uuid, results_lim
                                                        results_offset integer default 0)
     returns json
     language plpgsql
+    set search_path = ''
 as
 $$
 BEGIN
@@ -151,7 +153,8 @@ grant execute on function public.get_team_invitations(uuid, integer, integer) to
 create or replace function public.accept_invitation(lookup_invitation_token text)
     returns jsonb
     language plpgsql
-    security definer set search_path = public, tenancy
+    security definer 
+    set search_path = ''
 as
 $$
 declare
@@ -196,7 +199,8 @@ grant execute on function public.accept_invitation(text) to authenticated;
 create or replace function public.lookup_invitation(lookup_invitation_token text)
     returns json
     language plpgsql
-    security definer set search_path = public, tenancy
+    security definer 
+    set search_path = ''
 as
 $$
 declare
@@ -224,6 +228,7 @@ create or replace function public.create_invitation(team_id uuid, team_role tena
                                                     invitation_type tenancy.invitation_type)
     returns json
     language plpgsql
+    set search_path = ''
 as
 $$
 declare
@@ -246,6 +251,7 @@ grant execute on function public.create_invitation(uuid, tenancy.team_role, tena
 create or replace function public.delete_invitation(invitation_id uuid)
     returns void
     language plpgsql
+    set search_path = ''
 as
 $$
 begin

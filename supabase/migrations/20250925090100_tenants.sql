@@ -87,7 +87,8 @@ BEGIN
 
     RETURN NEW;
 END
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = '';
 
 -- trigger to protect team fields
 CREATE TRIGGER tenancy_protect_team_fields
@@ -107,7 +108,8 @@ BEGIN
 
     RETURN NEW;
 END
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = '';
 
 -- trigger to slugify the team slug
 CREATE TRIGGER tenancy_slugify_team_slug
@@ -166,7 +168,7 @@ create or replace function tenancy.add_current_user_to_new_team()
     returns trigger
     language plpgsql
     security definer
-    set search_path = public
+    set search_path = ''
 as
 $$
 begin
@@ -193,7 +195,7 @@ create or replace function tenancy.run_new_user_setup()
     returns trigger
     language plpgsql
     security definer
-    set search_path = public
+    set search_path = ''
 as
 $$
 declare
@@ -244,7 +246,7 @@ create or replace function tenancy.has_role_on_team(team_id uuid, team_role tena
     returns boolean
     language sql
     security definer
-    set search_path = public
+    set search_path = ''
 as
 $$
 select exists(
@@ -270,7 +272,7 @@ create or replace function tenancy.get_teams_with_role(passed_in_role tenancy.te
     returns setof uuid
     language sql
     security definer
-    set search_path = public
+    set search_path = ''
 as
 $$
 select team_id
@@ -359,6 +361,7 @@ create policy "Teams can be edited by owners" on tenancy.teams
 create or replace function public.get_team_id(slug text)
     returns uuid
     language sql
+    set search_path = ''
 as
 $$
 select id
@@ -374,6 +377,7 @@ grant execute on function public.get_team_id(text) to authenticated, service_rol
 create or replace function public.current_user_team_role(team_id uuid)
     returns jsonb
     language plpgsql
+    set search_path = ''
 as
 $$
 DECLARE
@@ -409,7 +413,7 @@ create or replace function public.update_team_user_role(team_id uuid, user_id uu
                                                         make_primary_owner boolean default false)
     returns void
     security definer
-    set search_path = public
+    set search_path = ''
     language plpgsql
 as
 $$
@@ -461,6 +465,7 @@ grant execute on function public.update_team_user_role(uuid, uuid, tenancy.team_
 create or replace function public.get_teams()
     returns json
     language sql
+    set search_path = ''
 as
 $$
 select coalesce(json_agg(
@@ -487,6 +492,7 @@ grant execute on function public.get_teams() to authenticated;
 create or replace function public.get_team(team_id uuid)
     returns json
     language plpgsql
+    set search_path = ''
 as
 $$
 BEGIN
@@ -528,6 +534,7 @@ grant execute on function public.get_team(uuid) to authenticated, service_role;
 create or replace function public.get_team_by_slug(slug text)
     returns json
     language plpgsql
+    set search_path = ''
 as
 $$
 DECLARE
@@ -552,6 +559,7 @@ grant execute on function public.get_team_by_slug(text) to authenticated;
 create or replace function public.create_team(slug text default null, name text default null)
     returns json
     language plpgsql
+    set search_path = ''
 as
 $$
 DECLARE
@@ -581,6 +589,7 @@ create or replace function public.update_team(team_id uuid, slug text default nu
                                               replace_metadata boolean default false)
     returns json
     language plpgsql
+    set search_path = ''
 as
 $$
 BEGIN
@@ -618,7 +627,7 @@ create or replace function public.get_team_members(team_id uuid, results_limit i
     returns json
     language plpgsql
     security definer
-    set search_path = tenancy
+    set search_path = ''
 as
 $$
 BEGIN
@@ -655,6 +664,7 @@ grant execute on function public.get_team_members(uuid, integer, integer) to aut
 create or replace function public.remove_team_member(team_id uuid, user_id uuid)
     returns void
     language plpgsql
+    set search_path = ''
 as
 $$
 BEGIN
