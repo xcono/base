@@ -1,25 +1,19 @@
 /**
-      ____                 _
-     |  _ \               (_)
-     | |_) | __ _ ___  ___ _ _   _ _ __ ___  _ __
-     |  _ < / _` / __|/ _ \ | | | | '_ ` _ \| '_ \
-     | |_) | (_| \__ \  __/ | |_| | | | | | | |_) |
-     |____/ \__,_|___/\___| |\__,_|_| |_| |_| .__/
-                         _/ |               | |
-                        |__/                |_|
-
-     Basejump is a starter kit for building SaaS products on top of Supabase.
-     Learn more at https://usebasejump.com
+ * Learn more at https://usebasejump.com
  */
 
 
 /**
   * -------------------------------------------------------
-  * Section - Basejump schema setup and utility functions
+  * Terms:
+  *
+  * Security Invoker: the user who invokes the function
+  * Security Definer: the user who defines the function
   * -------------------------------------------------------
  */
 
 -- revoke execution by default from public
+-- approach: deny all, allow specific functions
 ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA PUBLIC REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;
 
