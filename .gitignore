@@ -5,3 +5,4 @@ test.http
 docker-compose.override.yml
 .vscode
 .cursor/mcp.json
+node_modules

@@ -1,0 +1,24 @@
+{
+  "name": "supabase-database-tests",
+  "version": "1.0.0",
+  "description": "Supabase database testing setup with dbdev",
+  "scripts": {
+    "test:db": "supabase test db",
+    "test:db:local": "node scripts/run-local-tests.js",
+    "dev:setup": "supabase db start && npm run db:reset",
+    "db:reset": "supabase db reset --yes",
+    "db:migrate": "supabase db reset --yes",
+    "db:start": "supabase db start",
+    "db:stop": "supabase db stop",
+    "dbdev:install": "node scripts/install-dbdev-packages.js"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.38.0",
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
